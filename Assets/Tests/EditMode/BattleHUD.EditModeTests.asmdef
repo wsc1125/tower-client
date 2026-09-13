@@ -2,7 +2,8 @@
   "name": "BattleHUD.EditModeTests",
   "rootNamespace": "",
   "references": [
-    "BattleHUD"
+    "BattleHUD",
+    "Inventory"
   ],
   "includePlatforms": [
     "Editor"

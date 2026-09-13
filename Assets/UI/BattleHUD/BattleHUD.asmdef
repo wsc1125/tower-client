@@ -2,7 +2,8 @@
   "name": "BattleHUD",
   "rootNamespace": "",
   "references": [
-    "Unity.TextMeshPro"
+    "Unity.TextMeshPro",
+    "Inventory"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],

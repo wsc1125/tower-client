@@ -1,6 +1,7 @@
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
+using UnityEngine.UI;
 
 public class BattleHUDTouchTargetTests
 {
@@ -51,5 +52,19 @@ public class BattleHUDTouchTargetTests
         Assert.That(baseRect.anchoredPosition.y, Is.GreaterThanOrEqualTo(halfHeight));
         Assert.That(baseRect.anchoredPosition.x + halfWidth, Is.LessThanOrEqualTo(joystick.sizeDelta.x));
         Assert.That(baseRect.anchoredPosition.y + halfHeight, Is.LessThanOrEqualTo(joystick.sizeDelta.y));
+    }
+
+    [Test]
+    public void BattleHudPrefab_ContainsWiredBagPanel()
+    {
+        var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
+        var panel = prefab != null ? prefab.transform.Find("BagPanel") : null;
+        var bagButton = prefab != null ? prefab.transform.Find("BagButton")?.GetComponent<Button>() : null;
+
+        Assert.That(panel, Is.Not.Null);
+        Assert.That(panel.GetComponent<BagPanelController>(), Is.Not.Null);
+        Assert.That(bagButton, Is.Not.Null);
+        Assert.That(bagButton.onClick.GetPersistentEventCount(), Is.EqualTo(1));
+        Assert.That(bagButton.onClick.GetPersistentMethodName(0), Is.EqualTo(nameof(BagPanelController.Toggle)));
     }
 }
