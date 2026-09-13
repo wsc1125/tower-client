@@ -18,7 +18,9 @@ public class VirtualJoystickController : MonoBehaviour, IPointerDownHandler, IDr
     [SerializeField] private UnityEvent onPointerUpEvent = new();
 
     private Vector2 input;
+    private Vector2 defaultBasePosition;
     private bool isDragging;
+    private bool hasDefaultBasePosition;
 
     public Vector2 Input => input;
     public float Magnitude => input.magnitude;
@@ -33,7 +35,8 @@ public class VirtualJoystickController : MonoBehaviour, IPointerDownHandler, IDr
         baseRect = baseTarget;
         handleRect = handleTarget;
         maxRadius = radius;
-        ResetHandle();
+        CacheDefaultBasePosition();
+        ResetToDefaultPosition();
     }
 
     private void Awake()
@@ -58,14 +61,21 @@ public class VirtualJoystickController : MonoBehaviour, IPointerDownHandler, IDr
             maxRadius = baseRect.sizeDelta.x * 0.5f;
         }
 
-        ResetHandle();
+        CacheDefaultBasePosition();
+        ResetToDefaultPosition();
     }
 
     public void OnPointerDown(PointerEventData eventData)
     {
+        if (!TryGetLocalPoint(eventData, out var localPoint))
+        {
+            return;
+        }
+
         isDragging = true;
+        MoveBaseTo(localPoint);
         onPointerDownEvent.Invoke();
-        UpdateFromPointer(eventData);
+        UpdateFromLocalPoint(localPoint);
     }
 
     public void OnDrag(PointerEventData eventData)
@@ -81,29 +91,31 @@ public class VirtualJoystickController : MonoBehaviour, IPointerDownHandler, IDr
     public void OnPointerUp(PointerEventData eventData)
     {
         isDragging = false;
-        ResetHandle();
+        ResetToDefaultPosition();
         onPointerUpEvent.Invoke();
     }
 
     private void UpdateFromPointer(PointerEventData eventData)
     {
-        if (rootRect == null || handleRect == null)
+        if (!TryGetLocalPoint(eventData, out var localPoint))
         {
             return;
         }
 
-        if (!RectTransformUtility.ScreenPointToLocalPointInRectangle(
-                rootRect,
-                eventData.position,
-                eventData.pressEventCamera,
-                out var localPoint))
+        UpdateFromLocalPoint(localPoint);
+    }
+
+    private void UpdateFromLocalPoint(Vector2 localPoint)
+    {
+        if (baseRect == null || handleRect == null)
         {
             return;
         }
 
-        var clamped = Vector2.ClampMagnitude(localPoint, Mathf.Max(1f, maxRadius));
+        var center = baseRect.anchoredPosition;
+        var clamped = Vector2.ClampMagnitude(localPoint - center, Mathf.Max(1f, maxRadius));
         input = clamped / Mathf.Max(1f, maxRadius);
-        handleRect.anchoredPosition = clamped;
+        handleRect.anchoredPosition = center + clamped;
 
         if (input.sqrMagnitude > 0.0001f)
         {
@@ -118,13 +130,66 @@ public class VirtualJoystickController : MonoBehaviour, IPointerDownHandler, IDr
         onValueChanged.Invoke(input, input.magnitude);
     }
 
+    private bool TryGetLocalPoint(PointerEventData eventData, out Vector2 localPoint)
+    {
+        localPoint = Vector2.zero;
+
+        if (rootRect == null)
+        {
+            return false;
+        }
+
+        return RectTransformUtility.ScreenPointToLocalPointInRectangle(
+            rootRect,
+            eventData.position,
+            eventData.pressEventCamera,
+            out localPoint);
+    }
+
+    private void CacheDefaultBasePosition()
+    {
+        if (baseRect == null)
+        {
+            return;
+        }
+
+        defaultBasePosition = baseRect.anchoredPosition;
+        hasDefaultBasePosition = true;
+    }
+
+    private void MoveBaseTo(Vector2 anchoredPosition)
+    {
+        if (baseRect == null)
+        {
+            return;
+        }
+
+        baseRect.anchoredPosition = anchoredPosition;
+        ResetHandle();
+    }
+
+    private void ResetToDefaultPosition()
+    {
+        if (!hasDefaultBasePosition)
+        {
+            CacheDefaultBasePosition();
+        }
+
+        if (baseRect != null)
+        {
+            baseRect.anchoredPosition = defaultBasePosition;
+        }
+
+        ResetHandle();
+    }
+
     private void ResetHandle()
     {
         input = Vector2.zero;
 
         if (handleRect != null)
         {
-            handleRect.anchoredPosition = Vector2.zero;
+            handleRect.anchoredPosition = baseRect != null ? baseRect.anchoredPosition : Vector2.zero;
             handleRect.localEulerAngles = Vector3.zero;
         }
 
