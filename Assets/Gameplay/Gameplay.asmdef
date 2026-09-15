@@ -2,7 +2,8 @@
   "name": "Gameplay",
   "rootNamespace": "",
   "references": [
-    "BattleHUD"
+    "BattleHUD",
+    "Inventory"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],
