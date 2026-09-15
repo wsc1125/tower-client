@@ -6,6 +6,7 @@ public class PlayerMovement2D : MonoBehaviour
     [SerializeField] private float moveSpeed = 4f;
     [SerializeField] private VirtualJoystickController joystick;
     [SerializeField] private Rigidbody2D body;
+    [SerializeField] private CharacterVisual2D visual;
 
     private Vector2 resolvedInput;
 
@@ -30,6 +31,11 @@ public class PlayerMovement2D : MonoBehaviour
     private void Update()
     {
         resolvedInput = ResolveMovementInput(ReadKeyboardInput(), ReadJoystickInput());
+
+        if (visual != null)
+        {
+            visual.SetMotion(resolvedInput * moveSpeed);
+        }
     }
 
     private void FixedUpdate()
