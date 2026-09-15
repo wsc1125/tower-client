@@ -8,6 +8,7 @@ public sealed class BagPanelController : MonoBehaviour
     [SerializeField] private EquipmentSlotView[] equipmentSlots;
     [SerializeField] private Image dragGhost;
     [SerializeField] private ItemDefinition[] startingItems;
+    [SerializeField] private InventoryHolder holder;
 
     private BagDragSource? activeDrag;
     private Image sourceIcon;
@@ -148,7 +149,7 @@ public sealed class BagPanelController : MonoBehaviour
     {
         if (Model != null)
             return;
-        Model = new Inventory();
+        Model = holder != null ? holder.Model : new Inventory();
         Model.Changed += Refresh;
         BindViews();
     }

@@ -94,6 +94,26 @@ public sealed class BagPanelControllerTests
         Assert.That(bow.Icon, Is.Not.Null);
     }
 
+    [Test]
+    public void EnsureModel_UsesWiredInventoryHolder()
+    {
+        var holderRoot = new GameObject("Holder");
+        var holder = holderRoot.AddComponent<InventoryHolder>();
+
+        var controllerRoot = new GameObject("Controller");
+        var controller = controllerRoot.AddComponent<BagPanelController>();
+        var serialized = new SerializedObject(controller);
+        serialized.FindProperty("holder").objectReferenceValue = holder;
+        serialized.ApplyModifiedPropertiesWithoutUndo();
+
+        controller.Configure(controllerRoot, null, null, null, null);
+
+        Assert.That(controller.Model, Is.SameAs(holder.Model));
+
+        Object.DestroyImmediate(controllerRoot);
+        Object.DestroyImmediate(holderRoot);
+    }
+
     private static ItemDefinition CreateItem(EquipmentSlotType slot)
     {
         var item = ScriptableObject.CreateInstance<ItemDefinition>();
