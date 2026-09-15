@@ -351,7 +351,8 @@ EditMode 测试覆盖两个纯逻辑单元（沿用现有 `Gameplay.EditModeTest
 ## 约束
 
 - 不破坏 `BattleHUD` 现有布局与交互
-- 不改动 `Assets/UI/BattleHUD/Sprites/武器图标.png` 与 `Assets/Inventory/Items/` 下的现有资产
+- 不改动 `Assets/UI/BattleHUD/Sprites/武器图标.png`
+- `Assets/Inventory/Items/TrainingSword.asset` 只新增 `worldSprite` 字段值，不改动原有字段
 - 不改动 `Room_Battle_Closed_01` 预制体结构
 - `Enemy_Block` 本轮保持现状（继续使用 `DebugBlockVisual`），敌人素材到位后按 `Character_Base` 结构接入
 - 不引入 `Animator`、`AnimatorController` 等资产
