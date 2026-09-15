@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 7730264560258604355}
   - component: {fileID: 3595641228559422402}
   - component: {fileID: 5245198541122770775}
+  - component: {fileID: 3004738563168865828}
   m_Layer: 0
   m_Name: Character_Base
   m_TagString: Untagged
@@ -123,6 +124,24 @@ MonoBehaviour:
   joystick: {fileID: 0}
   body: {fileID: 7730264560258604355}
   visual: {fileID: 2017171902753992088}
+--- !u!114 &3004738563168865828
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2260301540689113387}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 21c3d2cea01b07546834d384c516de0d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  weaponPivot: {fileID: 2560446405973201332}
+  mountSlot: {fileID: 7009228853422444012}
+  attackButton: {fileID: 0}
+  duration: 0.3
+  startAngle: 60
+  endAngle: -60
 --- !u!1 &2851256417521745383
 GameObject:
   m_ObjectHideFlags: 0

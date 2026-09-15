@@ -292,7 +292,7 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 4868117699325684681, guid: ea928aa45980ec441b4e48c7fd3e213e, type: 3}
   m_PrefabInstance: {fileID: 96328934}
   m_PrefabAsset: {fileID: 0}
---- !u!213 &163934398
+--- !u!213 &271264953
 Sprite:
   m_ObjectHideFlags: 0
   m_CorrespondingSourceObject: {fileID: 0}
@@ -1348,6 +1348,17 @@ RectTransform:
   m_CorrespondingSourceObject: {fileID: 2386339704564800770, guid: 836c1e5a935adb54088bea4bace65547, type: 3}
   m_PrefabInstance: {fileID: 373774303}
   m_PrefabAsset: {fileID: 0}
+--- !u!114 &373774305 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8610090382508211352, guid: 836c1e5a935adb54088bea4bace65547, type: 3}
+  m_PrefabInstance: {fileID: 373774303}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 33c001882aade9242ae43c39c9f28693, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &519420028
 GameObject:
   m_ObjectHideFlags: 0
@@ -1620,7 +1631,7 @@ SpriteRenderer:
   m_SortingLayerID: 0
   m_SortingLayer: 0
   m_SortingOrder: 6
-  m_Sprite: {fileID: 163934398}
+  m_Sprite: {fileID: 271264953}
   m_Color: {r: 0.95, g: 0.3, b: 0.3, a: 1}
   m_FlipX: 0
   m_FlipY: 0
@@ -2372,6 +2383,10 @@ PrefabInstance:
       propertyPath: m_Name
       value: Character_Base
       objectReference: {fileID: 0}
+    - target: {fileID: 3004738563168865828, guid: 541ffe6451d4738458a345c2e1f80bd8, type: 3}
+      propertyPath: attackButton
+      value: 
+      objectReference: {fileID: 373774305}
     - target: {fileID: 5245198541122770775, guid: 541ffe6451d4738458a345c2e1f80bd8, type: 3}
       propertyPath: joystick
       value: 
