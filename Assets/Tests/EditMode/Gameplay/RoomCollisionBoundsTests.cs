@@ -4,10 +4,10 @@ using UnityEngine;
 
 public class RoomCollisionBoundsTests
 {
-    private const string ScenePath = "Assets/Scenes/SampleScene.unity";
+    private const string ScenePath = "Assets/Scenes/BattleScene.unity";
 
     [Test]
-    public void SampleScene_RoomUsesDedicatedCollisionBoundsInsteadOfVisualWallColliders()
+    public void BattleScene_RoomUsesDedicatedCollisionBoundsInsteadOfVisualWallColliders()
     {
         EditorSceneManager.OpenScene(ScenePath);
 
