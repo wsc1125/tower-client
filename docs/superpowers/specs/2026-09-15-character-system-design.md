@@ -38,13 +38,37 @@
 | 素材 | 建议路径 | 要求 |
 | --- | --- | --- |
 | 角色行走序列帧 | `Assets/Gameplay/Art/Characters/Player/Player_Walk_Right.png` | 4 帧横排一张图，或 4 张独立 PNG；朝向为**向右** |
-| 刀的精灵 | `Assets/Gameplay/Art/Weapons/Weapon_Knife.png` | **pivot 必须设在握把处** |
+| 刀的世界外观 | `Assets/Gameplay/Art/Weapons/Weapon_Sword.png` | 由现有 `武器图标.png` 另存而来，**pivot 必须设在握把处** |
 
 刀的 pivot 设在握把是关键约定：这样锚点位置就等于握持点，**无需为每把武器引入偏移/旋转字段**，第一版可以直接砍掉这部分复杂度。
 
 若提供的是 4 张独立 PNG，则跳过切图步骤，直接在 `moveFrames` 数组里依次引用；若是单张横排图，则用 `TextureImporter` 以 `spriteMode = Multiple` 切成 4 个子精灵，命名 `..._0` ~ `..._3`。
 
 参考现有资源：`Assets/Environment/BattleRoom/Sprites/大底图.png` 使用 PPU 100、pivot 居中、filterMode Bilinear。角色先用同样的 PPU 100 接入，实机看清不清晰再调。
+
+### 刀的世界外观：复用现有图标
+
+`Assets/UI/BattleHUD/Sprites/武器图标.png` 实测结果：
+
+- 1254×1254、RGBA，背景**确实透明**（四角像素 alpha = 0），可直接作为世界精灵使用
+- 它是 `TrainingSword.asset` 的 `icon`（guid `b945c4ce171f0dc4f9cb7aaa60879244`）
+- 剑的不透明包围盒 1127×1107，几乎占满整张图
+- 剑柄端 (64, 1159)、剑尖 (1189, 56)，**剑长 1575.5 px，朝向 44.4°**
+- 当前 import 为 PPU 100、pivot 居中
+
+处理方式：**复制一份**到 `Assets/Gameplay/Art/Weapons/Weapon_Sword.png`，独立设置 import 参数，UI 图标保持原样。复制而非直接改原文件，是为了让 UI 图标与世界外观互不干扰。
+
+副本的 import 参数建议：
+
+| 参数 | 值 | 说明 |
+| --- | --- | --- |
+| `spritePivot` | ≈ `(0.21, 0.23)` | 握把位置，约为柄端到剑尖连线 18% 处；实际值在 Unity 里目视微调 |
+| `spritePixelsToUnits` | ≈ `1600` | 使剑在世界中长约 0.98 单位（1575.5 / 1600），与 1 单位高的角色相称 |
+| `filterMode` | 保持 Bilinear | 与工程现状一致 |
+
+锚点 `MainHand` 的 rotation 需要补偿约 **-44.4°**，把斜放的剑转正；具体角度以目视结果为准。
+
+结论：这份资源**可以作为第一版测试用的世界武器外观**。它的画风是精细 3D 渲染风，与后续导入的角色行走图是否协调需要实机比对；替换时只要换掉 `Weapon_Sword.png` 的引用即可，不影响任何代码。
 
 ## 架构
 
@@ -281,6 +305,7 @@ EditMode 测试覆盖两个纯逻辑单元（沿用现有 `Gameplay.EditModeTest
 ## 约束
 
 - 不破坏 `BattleHUD` 现有布局与交互
+- 不改动 `Assets/UI/BattleHUD/Sprites/武器图标.png` 本体，武器世界外观使用其副本
 - 不改动 `Room_Battle_Closed_01` 预制体结构
 - `Enemy_Block` 本轮保持现状（继续使用 `DebugBlockVisual`），敌人素材到位后按 `Character_Base` 结构接入
 - 不引入 `Animator`、`AnimatorController` 等资产
