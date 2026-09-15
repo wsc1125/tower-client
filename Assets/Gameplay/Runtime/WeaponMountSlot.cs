@@ -8,6 +8,10 @@ public sealed class WeaponMountSlot : MonoBehaviour
 
     private Inventory subscribed;
 
+    public bool HasWeapon => weaponRenderer != null
+                          && weaponRenderer.enabled
+                          && weaponRenderer.sprite != null;
+
     private void OnEnable()
     {
         Subscribe();
