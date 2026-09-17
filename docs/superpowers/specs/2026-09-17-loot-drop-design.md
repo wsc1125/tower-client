@@ -310,7 +310,7 @@ public sealed class LootPanelController : MonoBehaviour
 
 **本轮只接白色一档**（`Glow_White`），验证视觉与层级；颜色按 `value` 分档等物品数量上来后再做。
 
-接入方式：`DroppedItem.prefab` 下与 `Visual` 平级的 `Glow` 节点（`sortingOrder = 1`，`Visual` 为 2）。
+接入方式：`DroppedItem.prefab` 下与 `Visual` 平级的 `Glow` 节点（`sortingOrder = 6`，`Visual` 为 7 —— 必须高于敌人的 3，否则会被尸体压住）。
 光圈**不随物品宽高比变形** —— 它按自身「宽度」对齐物品体量：`世界宽 = worldSize × glowWidthRatio（1.6）`，
 保持素材等比缩放，并把节点底边贴到物品底边（`localPosition.y = -物品世界高度 ÷ 2`），读起来像「地上的一滩光」。
 
@@ -380,11 +380,16 @@ public sealed class LootPanelController : MonoBehaviour
 | 验证项 | 结果 |
 | --- | --- |
 | 掉光圈的尺寸/位置 | 通过。`Glow` 世界尺寸 0.72×0.41，物品（野生狗奶）世界尺寸 0.28×0.45 —— 光圈比物品宽、贴在其底边 |
-| 光圈层级 | 通过。`Floor_Base` order 0 → `Glow` order 1 → `Visual` order 2，光圈压在地面上、物品压在光圈上 |
+| 光圈层级 | 通过。`Floor_Base` order 0 → `Glow` order 6 → `Visual` order 7，光圈压在地面上、物品压在光圈上（层级数值的修正见下方「修复」） |
 | 光圈渲染 | 通过（截图确认）。深色地砖上能清楚看到白色椭圆光斑，物品底部坐在光斑上 |
 | 击杀 → 掉两件 | 通过。击杀 `Enemy_MechJelly` 后同时生成「训练长剑」与「野生狗奶」，两件都带白色光圈 |
 | 列表内容 | 通过。靠近后列表两行：`训练长剑 / 价值 60`、`野生狗奶 / 价值 30` |
 | 点击拾取 | 通过。点第 2 行后 `野生狗奶` 进背包，地面只剩「训练长剑」 |
+| 掉落物不被尸体遮挡 | 通过（截图确认）。物品叠在敌人尸体上时完整可见，光圈也不被尸体挡住 |
+
+**修复**：光圈首版用了 `Glow = 1 / Visual = 2`，而敌人 `Enemy_MechJelly` 的 `Visual` 是 `sortingOrder = 3`，导致掉落物被尸体压住。现改为 `Glow = 6 / Visual = 7`。
+
+当前 `Default` 层的排序约定：地面 0 → 敌人 3 → 敌方激光 5 → **光圈 6 → 掉落物 7** → 墙体 10 → 子弹/命中特效 15 → 玩家 20~22。后续接入新东西时在这个序列里找空位，不要在「敌人 3」以下给地面物件排层级。
 
 ## 约束
 
