@@ -78,13 +78,19 @@ public sealed class LootInteractor : MonoBehaviour
             return;
         }
 
-        if (SameAsPrevious())
+        if (!SameAsPrevious())
+        {
+            BuildEntries();
+            previous.Clear();
+            previous.AddRange(current);
+            panel.Show(entries);
             return;
+        }
 
-        BuildEntries();
-        previous.Clear();
-        previous.AddRange(current);
-        panel.Show(entries);
+        // 物品集合没变时也要确保面板处于显示状态，
+        // 否则「外部隐藏了面板」会让列表再也出不来。
+        if (!panel.IsVisible)
+            panel.Show(entries);
     }
 
     /// <summary>拾取的唯一入口。将来接联机时只改这个方法内部：发请求 + 服务器校验后再发货。</summary>
