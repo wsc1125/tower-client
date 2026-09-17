@@ -183,6 +183,7 @@ GameObject:
   - component: {fileID: 3004738563168865828}
   - component: {fileID: 6823500130972557040}
   - component: {fileID: 5426766265547236993}
+  - component: {fileID: 2375190788065242676}
   m_Layer: 0
   m_Name: Character_Base
   m_TagString: Untagged
@@ -361,6 +362,20 @@ MonoBehaviour:
   scanInterval: 0.2
   inventory: {fileID: 0}
   panel: {fileID: 0}
+--- !u!114 &2375190788065242676
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2260301540689113387}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 195ea4684cebbfd4c8ac6969a2807479, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  holder: {fileID: 0}
+  switchButton: {fileID: 0}
 --- !u!1 &2851256417521745383
 GameObject:
   m_ObjectHideFlags: 0
@@ -493,6 +508,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   weaponRenderer: {fileID: 616450221004720809}
   holder: {fileID: 0}
+  selector: {fileID: 2375190788065242676}
   mountedSlot: 2
 --- !u!1 &3905002733424279776
 GameObject:
@@ -588,6 +604,7 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   weaponRenderer: {fileID: 4031683041832724929}
   holder: {fileID: 0}
+  selector: {fileID: 2375190788065242676}
   mountedSlot: 1
 --- !u!1 &8009046184543900087
 GameObject:

@@ -12,6 +12,7 @@ GameObject:
   - component: {fileID: 8052476345425284921}
   - component: {fileID: 2668262624787270152}
   - component: {fileID: 3742440241607243345}
+  - component: {fileID: 5083758487533624501}
   m_Layer: 0
   m_Name: AttackSwitchButton
   m_TagString: Untagged
@@ -120,3 +121,15 @@ MonoBehaviour:
   m_OnClick:
     m_PersistentCalls:
       m_Calls: []
+--- !u!114 &5083758487533624501
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7058524944208864710}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bb7ddb412a7c48b41a4c0fe2a348d559, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 

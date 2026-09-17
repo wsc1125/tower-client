@@ -1160,6 +1160,17 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 9b6626d5cec793345a35f26228f0d7af, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
+--- !u!114 &373774307 stripped
+MonoBehaviour:
+  m_CorrespondingSourceObject: {fileID: 8327575496183032640, guid: 836c1e5a935adb54088bea4bace65547, type: 3}
+  m_PrefabInstance: {fileID: 373774303}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: bb7ddb412a7c48b41a4c0fe2a348d559, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &519420028
 GameObject:
   m_ObjectHideFlags: 0
@@ -2086,6 +2097,14 @@ PrefabInstance:
       propertyPath: m_Name
       value: Character_Base
       objectReference: {fileID: 0}
+    - target: {fileID: 2375190788065242676, guid: 541ffe6451d4738458a345c2e1f80bd8, type: 3}
+      propertyPath: holder
+      value: 
+      objectReference: {fileID: 2137064491}
+    - target: {fileID: 2375190788065242676, guid: 541ffe6451d4738458a345c2e1f80bd8, type: 3}
+      propertyPath: switchButton
+      value: 
+      objectReference: {fileID: 373774307}
     - target: {fileID: 2560446405973201332, guid: 541ffe6451d4738458a345c2e1f80bd8, type: 3}
       propertyPath: m_ConstrainProportionsScale
       value: 0

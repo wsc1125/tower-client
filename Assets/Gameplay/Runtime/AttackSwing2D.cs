@@ -33,9 +33,18 @@ public sealed class AttackSwing2D : MonoBehaviour
             return;
         }
 
+        // 刀不在手上（没装备或被切到远程）时立刻收招，避免停在半挥的角度上。
+        if (!mountSlot.HasWeapon)
+        {
+            if (isSwinging)
+                EndSwing();
+
+            return;
+        }
+
         if (!isSwinging)
         {
-            if (attackButton.IsHeld && mountSlot.HasWeapon)
+            if (attackButton.IsHeld)
             {
                 BeginSwing();
             }
