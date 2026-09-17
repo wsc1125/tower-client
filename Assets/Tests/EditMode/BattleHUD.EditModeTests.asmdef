@@ -3,8 +3,7 @@
   "rootNamespace": "",
   "references": [
     "BattleHUD",
-    "Inventory",
-    "Unity.TextMeshPro"
+    "Inventory"
   ],
   "includePlatforms": [
     "Editor"

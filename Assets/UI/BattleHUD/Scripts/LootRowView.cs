@@ -1,5 +1,4 @@
 using System;
-using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -7,8 +6,8 @@ using UnityEngine.UI;
 public sealed class LootRowView : MonoBehaviour
 {
     [SerializeField] private Image icon;
-    [SerializeField] private TMP_Text nameText;
-    [SerializeField] private TMP_Text valueText;
+    [SerializeField] private Text nameText;
+    [SerializeField] private Text valueText;
     [SerializeField] private Button button;
 
     private Action<int> onSelected;

@@ -97,7 +97,7 @@ public sealed class LootPanelControllerTests
     {
         var hintObject = new GameObject("Hint");
         hintObject.transform.SetParent(root.transform);
-        var hint = hintObject.AddComponent<TMPro.TextMeshProUGUI>();
+        var hint = hintObject.AddComponent<Text>();
         var serialized = new SerializedObject(controller);
         serialized.FindProperty("hintText").objectReferenceValue = hint;
         serialized.ApplyModifiedPropertiesWithoutUndo();

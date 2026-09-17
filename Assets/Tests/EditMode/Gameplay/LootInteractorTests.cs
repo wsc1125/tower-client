@@ -84,7 +84,7 @@ public sealed class LootInteractorTests
     {
         var hintObject = new GameObject("Hint");
         hintObject.transform.SetParent(panelRoot.transform);
-        var hint = hintObject.AddComponent<TMPro.TextMeshProUGUI>();
+        var hint = hintObject.AddComponent<UnityEngine.UI.Text>();
         var serializedPanel = new SerializedObject(panel);
         serializedPanel.FindProperty("hintText").objectReferenceValue = hint;
         serializedPanel.ApplyModifiedPropertiesWithoutUndo();

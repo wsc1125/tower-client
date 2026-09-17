@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
-using TMPro;
 using UnityEngine;
+using UnityEngine.UI;
 
 /// <summary>
 /// 附近掉落物品列表。只负责展示与把「点行」转成行号事件，
@@ -11,7 +11,7 @@ public sealed class LootPanelController : MonoBehaviour
 {
     [SerializeField] private GameObject panelRoot;
     [SerializeField] private LootRowView[] rows;
-    [SerializeField] private TMP_Text hintText;
+    [SerializeField] private Text hintText;
     [SerializeField] private float hintDuration = 1.5f;
 
     private float hintRemaining;
