@@ -297,19 +297,22 @@ public sealed class LootPanelController : MonoBehaviour
 
 注意：`WeaponMountSlot` 仍然会读取 `worldSprite` 作为角色手上武器（该行为本轮保持不变、不做任何改动），但本轮**不为其做尺寸或朝向适配**，即不考虑手持表现。
 
-### 已通过质检的素材（光圈，本轮可选）
+### 已接入的素材（光圈）
 
-4 张：`白色.png` / `红色.png` / `绿色.png` / `金色.png`，源目录 `C:\Users\16648\Desktop\素材\物品\光圈\`
+4 张：`白色.png` / `红色.png` / `绿色.png` / `金色.png`，源目录 `C:\Users\16648\Desktop\素材\物品\光圈\`，
+落到 `Assets/Gameplay/Art/Loot/Glow_{White,Gold,Green,Red}.png`。
 
 | 项 | 值 |
 | --- | --- |
 | 内容包围盒 | 818×320（金色 804×321） |
-| 建议导入 PPU | ≈1487（818 ÷ 0.55） |
-| 渲染尺寸 | 宽 0.55 × 高 0.216 世界单位 |
+| 导入 PPU | 100（世界尺寸 8.18 × 3.20） |
 | 质检结论 | 中心弱（alpha 45~62）→ 最亮环落在 55~60% 半径 → 连续衰减到透明；四档峰值一致（差 2~3） |
-| 用途 | 叠在掉落物下方做「可拾取」提示，按 `value` 档位映射颜色 |
 
-本轮**不接入**（「建议复用」里已列为非必须）。将来接入时的节点位置：挂在 `DroppedItem` 根节点下、与 `Visual` 平级，**不参与 `worldSize` 缩放**。
+**本轮只接白色一档**（`Glow_White`），验证视觉与层级；颜色按 `value` 分档等物品数量上来后再做。
+
+接入方式：`DroppedItem.prefab` 下与 `Visual` 平级的 `Glow` 节点（`sortingOrder = 1`，`Visual` 为 2）。
+光圈**不随物品宽高比变形** —— 它按自身「宽度」对齐物品体量：`世界宽 = worldSize × glowWidthRatio（1.6）`，
+保持素材等比缩放，并把节点底边贴到物品底边（`localPosition.y = -物品世界高度 ÷ 2`），读起来像「地上的一滩光」。
 
 ### 建议复用（全局各 1 张，不随物品增加）
 
@@ -336,7 +339,7 @@ public sealed class LootPanelController : MonoBehaviour
 - `LootTableTests`（`Assets/Tests/EditMode/`，归 `BattleHUD.EditModeTests`，该程序集已引用 `Inventory`）：概率 0 恒不掉 / 1 必掉 / 固定种子结果可复现 / 多条目互相独立 / 空 item 条目被跳过 / `random` 为 null 返回空
 - `EnemyBrain2DTests`（补，`Assets/Tests/EditMode/Gameplay/`）：`Died` 只触发一次、死亡后再次 `TakeDamage` 不重复触发
 - `LootScanTests`（`Assets/Tests/EditMode/Gameplay/`）：`SelectNearest` 的距离排序与截断、`HasAliveEnemyWithin` 对存活 / 死亡敌人的过滤与边界距离
-- `DroppedItem2DTests`（`Assets/Tests/EditMode/Gameplay/`）：缩放后贴图**最大边**等于 `worldSize` 且**宽高比不变**；`worldSprite` 为空时回退 `icon` 且体量同样受 `worldSize` 约束；`pickupZone.radius` 等于 `worldSize ÷ 2`
+- `DroppedItem2DTests`（`Assets/Tests/EditMode/Gameplay/`）：缩放后贴图**最大边**等于 `worldSize` 且**宽高比不变**；`worldSprite` 为空时回退 `icon` 且体量同样受 `worldSize` 约束；`pickupZone.radius` 等于 `worldSize ÷ 2`；光圈世界宽等于 `worldSize × glowWidthRatio` 且等比缩放不变形、贴物品底边、无贴图/无物品时关闭
 - `ItemDefinitionValidationTests`（`Assets/Tests/EditMode/`，归 `BattleHUD.EditModeTests`）：遍历 `Assets/Inventory/Items/` 下所有 `ItemDefinition`，断言 `displayName` 非空、`worldSize > 0`、`icon != null` —— 把「忘填」从「运行时看不见东西」提前到「跑测试就红」
 - `LootPanelControllerTests`（`Assets/Tests/EditMode/`，归 `BattleHUD.EditModeTests`）：`Show` 激活正确行数与内容、`Hide` 关闭面板、行点击抛出的索引正确、`ShowHint` 设置并清空文本
 
@@ -369,6 +372,19 @@ public sealed class LootPanelController : MonoBehaviour
 - 背景色 `(0.08, 0.10, 0.14, 0.85)` 与房间地砖颜色接近，实机上几乎看不出面板边界（用临时纯红实测确认背景确实在渲染）。
 
 **测试盲区**：EditMode 下 `Physics2D.OverlapCircleAll` 查不到测试中新建立的碰撞体，因此「靠近显示列表」「敌人靠近隐藏」这两条只能在 Play Mode 验证，未覆盖进 EditMode 测试。
+
+#### 光圈 + 野生狗奶 实机验证（2026-09-17 二次）
+
+同样用 MCP + `EditorApplication.Step()` 推帧验证。
+
+| 验证项 | 结果 |
+| --- | --- |
+| 掉光圈的尺寸/位置 | 通过。`Glow` 世界尺寸 0.72×0.41，物品（野生狗奶）世界尺寸 0.28×0.45 —— 光圈比物品宽、贴在其底边 |
+| 光圈层级 | 通过。`Floor_Base` order 0 → `Glow` order 1 → `Visual` order 2，光圈压在地面上、物品压在光圈上 |
+| 光圈渲染 | 通过（截图确认）。深色地砖上能清楚看到白色椭圆光斑，物品底部坐在光斑上 |
+| 击杀 → 掉两件 | 通过。击杀 `Enemy_MechJelly` 后同时生成「训练长剑」与「野生狗奶」，两件都带白色光圈 |
+| 列表内容 | 通过。靠近后列表两行：`训练长剑 / 价值 60`、`野生狗奶 / 价值 30` |
+| 点击拾取 | 通过。点第 2 行后 `野生狗奶` 进背包，地面只剩「训练长剑」 |
 
 ## 约束
 
