@@ -4,7 +4,8 @@
   "references": [
     "Gameplay",
     "BattleHUD",
-    "Inventory"
+    "Inventory",
+    "Unity.TextMeshPro"
   ],
   "includePlatforms": [
     "Editor"
