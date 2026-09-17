@@ -9,6 +9,7 @@ public sealed class ItemDefinitionValidationTests
         "Assets/Inventory/Items/Rifle.asset",
         "Assets/Inventory/Items/TrainingSword.asset",
         "Assets/Inventory/Items/TrainingBow.asset",
+        "Assets/Inventory/Items/WildDogMilk.asset",
     };
 
     [Test]
@@ -42,9 +43,11 @@ public sealed class ItemDefinitionValidationTests
         var sword = AssetDatabase.LoadAssetAtPath<ItemDefinition>("Assets/Inventory/Items/TrainingSword.asset");
         var bow = AssetDatabase.LoadAssetAtPath<ItemDefinition>("Assets/Inventory/Items/TrainingBow.asset");
         var rifle = AssetDatabase.LoadAssetAtPath<ItemDefinition>("Assets/Inventory/Items/Rifle.asset");
+        var milk = AssetDatabase.LoadAssetAtPath<ItemDefinition>("Assets/Inventory/Items/WildDogMilk.asset");
 
         Assert.That(sword.Value, Is.EqualTo(60));
         Assert.That(bow.Value, Is.EqualTo(45));
         Assert.That(rifle.Value, Is.EqualTo(120));
+        Assert.That(milk.Value, Is.EqualTo(30));
     }
 }

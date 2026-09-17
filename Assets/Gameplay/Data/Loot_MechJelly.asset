@@ -15,6 +15,8 @@ MonoBehaviour:
   entries:
   - item: {fileID: 11400000, guid: 51d1577fa87d3f64fae421828e576120, type: 2}
     dropChance: 1
+  - item: {fileID: 11400000, guid: 55a19d1df699d154ba400fb728324601, type: 2}
+    dropChance: 1
   - item: {fileID: 11400000, guid: 07248612a9d31d9439e46baa329fa3e4, type: 2}
     dropChance: 0
   - item: {fileID: 11400000, guid: c8cdb97bbc9cc4e479781e1cc7e5b454, type: 2}
