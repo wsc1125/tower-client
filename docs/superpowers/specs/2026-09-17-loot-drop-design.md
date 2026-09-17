@@ -391,6 +391,24 @@ public sealed class LootPanelController : MonoBehaviour
 
 当前 `Default` 层的排序约定：地面 0 → 敌人 3 → 敌方激光 5 → **光圈 6 → 掉落物 7** → 墙体 10 → 子弹/命中特效 15 → 玩家 20~22。后续接入新东西时在这个序列里找空位，不要在「敌人 3」以下给地面物件排层级。
 
+#### UI 输入优先级修复（点击列表被摇杆抢走）
+
+**问题**：点掉落列表的行时角色会跟着动，拾取不触发。
+
+**原因**：摇杆的捕获区是 `BattleHUD/Joystick` 下一张 `alpha = 0` 的全屏 `Image`（`raycastTarget = true`，尺寸 591×1080，覆盖屏幕左侧），它原本是 `BattleHUD` 的**最后一个子节点** —— 在 UGUI 里意味着渲染与射线检测都在最上层，于是左半屏的所有按下都先被摇杆吃掉，`LootPanel` 的行收不到事件。
+
+**修复**：把 `BattleHUD/Joystick` 移到 `BattleHUD` 的**第一个子节点**（同级顺序：Joystick → TopResourceBar → BagButton → AttackSwitchButton → AttackButton → LootPanel → BagPanel → StatusPanel）。UGUI 的输入优先级就是层级顺序，摇杆放最底后，面板 / 按钮自然优先。
+
+**约定**：摇杆捕获区必须是 `BattleHUD` 层级里的最底层，新增 HUD 面板时直接加在它后面，不要去改摇杆的顺序；也不要给纯装饰的 `Image` 打开 `raycastTarget`，否则会在那块区域静默吃掉摇杆输入。
+
+**验证**（Play Mode，`EventSystem.RaycastAll` 实测）：
+
+| 验证项 | 结果 |
+| --- | --- |
+| 行位置的射线命中顺序 | 通过。`Row0` → `Background` → `Joystick`，行在最上 |
+| 模拟按下 + 抬起 + 点击 | 通过。事件落在 `Row1`，摇杆 `IsDragging = false`、底盘无位移，物品进背包、地面掉落物 2 → 1 |
+| 空白区域仍是摇杆 | 通过。屏幕左侧空白处 `(60,120)` 的最上层命中仍是 `Joystick`，轮盘可正常拖动 |
+
 ## 约束
 
 - 不改动 `Inventory` 的 20 格容量、装备槽与拖拽逻辑
