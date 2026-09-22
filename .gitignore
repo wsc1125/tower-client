@@ -1,0 +1,46 @@
+# ---- Unity 生成目录（不入库） ----
+/[Ll]ibrary/
+/[Tt]emp/
+/[Oo]bj/
+/[Bb]uild/
+/[Bb]uilds/
+/[Ll]ogs/
+/[Uu]serSettings/
+/[Mm]emoryCaptures/
+/[Rr]ecordings/
+/_Backup/
+
+# ---- IDE / 编译产物 ----
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+.vs/
+.idea/
+
+# ---- 工具状态 ----
+.superpowers/
+
+# ---- 崩溃与日志 ----
+sysinfo.txt
+*.stackdump
+
+# ---- 构建产物 ----
+*.apk
+*.aab
+*.unitypackage
+*.app
+
+# ---- 系统垃圾 ----
+.DS_Store
+Thumbs.db
+desktop.ini

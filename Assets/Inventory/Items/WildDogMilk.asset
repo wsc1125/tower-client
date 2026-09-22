@@ -16,5 +16,7 @@ MonoBehaviour:
   icon: {fileID: 21300000, guid: 830eb291ff21607429ca190e061558bb, type: 3}
   worldSprite: {fileID: 21300000, guid: 830eb291ff21607429ca190e061558bb, type: 3}
   equipSlotType: 0
+  rarity: 0
   value: 30
+  buyPrice: 0
   worldSize: 0.45

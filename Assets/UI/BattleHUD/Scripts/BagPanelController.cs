@@ -7,7 +7,6 @@ public sealed class BagPanelController : MonoBehaviour
     [SerializeField] private BagItemView[] bagSlots;
     [SerializeField] private EquipmentSlotView[] equipmentSlots;
     [SerializeField] private Image dragGhost;
-    [SerializeField] private ItemDefinition[] startingItems;
     [SerializeField] private InventoryHolder holder;
 
     private BagDragSource? activeDrag;
@@ -21,11 +20,6 @@ public sealed class BagPanelController : MonoBehaviour
     private void Awake()
     {
         EnsureModel();
-        if (startingItems != null)
-        {
-            foreach (var item in startingItems)
-                Model.TryAdd(item);
-        }
         Refresh();
     }
 
@@ -35,13 +29,12 @@ public sealed class BagPanelController : MonoBehaviour
             Model.Changed -= Refresh;
     }
 
-    public void Configure(GameObject content, BagItemView[] bags, EquipmentSlotView[] equipment, Image ghost, ItemDefinition[] initialItems)
+    public void Configure(GameObject content, BagItemView[] bags, EquipmentSlotView[] equipment, Image ghost)
     {
         panelContent = content;
         bagSlots = bags;
         equipmentSlots = equipment;
         dragGhost = ghost;
-        startingItems = initialItems;
         EnsureModel();
         BindViews();
         Refresh();

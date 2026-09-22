@@ -124,6 +124,15 @@ public sealed class EnemyBrain2D : MonoBehaviour
         }
     }
 
+    /// <summary>
+    /// 攻击已经开始就必须执行到底：只要动作还没播完，即使玩家走出攻击范围也要保持攻击状态。
+    /// 死亡可随时打断；没有配置攻击帧的敌人不会进入锁定，避免永久停在攻击状态。
+    /// </summary>
+    public static bool ShouldHoldAttack(bool isAttacking, bool isDead, bool hasAttackFrames, bool attackFinished)
+    {
+        return isAttacking && !isDead && hasAttackFrames && !attackFinished;
+    }
+
     public void TakeDamage(float amount)
     {
         EnsureInitialized();
@@ -182,8 +191,20 @@ public sealed class EnemyBrain2D : MonoBehaviour
             IsDead,
             retreatStopRange);
 
-        if (resolvedState == EnemyState.Attack && cooldownRemaining > 0f)
+        // 攻击一旦开始就执行到底：动作没播完之前，玩家跑开、超出侦测范围都不收招，
+        // 否则会出现「挥到一半突然中断、伤害也没打出来」。
+        if (ShouldHoldAttack(
+                state == EnemyState.Attack,
+                IsDead,
+                visual != null && visual.HasAttackFrames,
+                visual != null && visual.AttackFinished))
+        {
+            resolvedState = EnemyState.Attack;
+        }
+        else if (resolvedState == EnemyState.Attack && cooldownRemaining > 0f)
+        {
             resolvedState = EnemyState.Chase;
+        }
 
         state = resolvedState;
 

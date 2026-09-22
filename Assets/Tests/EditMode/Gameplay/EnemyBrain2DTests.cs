@@ -60,6 +60,36 @@ public class EnemyBrain2DTests
     }
 
     [Test]
+    public void ShouldHoldAttack_KeepsAttackingUntilAnimationFinishes()
+    {
+        Assert.That(EnemyBrain2D.ShouldHoldAttack(true, false, true, false), Is.True);
+    }
+
+    [Test]
+    public void ShouldHoldAttack_ReleasesOnceAnimationFinished()
+    {
+        Assert.That(EnemyBrain2D.ShouldHoldAttack(true, false, true, true), Is.False);
+    }
+
+    [Test]
+    public void ShouldHoldAttack_DeathBreaksTheHold()
+    {
+        Assert.That(EnemyBrain2D.ShouldHoldAttack(true, true, true, false), Is.False);
+    }
+
+    [Test]
+    public void ShouldHoldAttack_DoesNotHoldWithoutAttackFrames()
+    {
+        Assert.That(EnemyBrain2D.ShouldHoldAttack(true, false, false, false), Is.False);
+    }
+
+    [Test]
+    public void ShouldHoldAttack_DoesNotHoldWhenNotAttacking()
+    {
+        Assert.That(EnemyBrain2D.ShouldHoldAttack(false, false, true, false), Is.False);
+    }
+
+    [Test]
     public void EnemyHealth_TakeDamageReducesHealthAndMarksDeath()
     {
         var health = new EnemyHealth(30f);

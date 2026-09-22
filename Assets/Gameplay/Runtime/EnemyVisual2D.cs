@@ -1,0 +1,100 @@
+using UnityEngine;
+
+[RequireComponent(typeof(SpriteRenderer))]
+public sealed class EnemyVisual2D : MonoBehaviour
+{
+    [SerializeField] private SpriteRenderer spriteRenderer;
+    [SerializeField] private Sprite[] idleFrames;
+    [SerializeField] private Sprite[] moveFrames;
+    [SerializeField] private Sprite[] attackFrames;
+    [SerializeField] private Sprite[] deathFrames;
+    [SerializeField] private float idleFramesPerSecond = 4f;
+    [SerializeField] private float moveFramesPerSecond = 8f;
+    [SerializeField] private float attackFramesPerSecond = 10f;
+    [SerializeField] private float deathFramesPerSecond = 7f;
+
+    private EnemyState previousState;
+    private float elapsed;
+    private int previousAttackFrame;
+    private bool firedThisAttack;
+
+    public bool AttackFinished { get; private set; }
+
+    /// <summary>
+    /// 是否配置了攻击动画帧。没有攻击帧时 <see cref="AttackFinished"/> 永远不会置位，
+    /// 调用方据此判断能否进入「攻击执行到底」的锁定，避免永久停在攻击状态。
+    /// </summary>
+    public bool HasAttackFrames => attackFrames != null && attackFrames.Length > 0;
+
+    private void Awake()
+    {
+        if (spriteRenderer == null)
+            spriteRenderer = GetComponent<SpriteRenderer>();
+    }
+
+    public bool Step(EnemyState state, Vector2 velocity, float deltaTime)
+    {
+        if (state != previousState)
+        {
+            elapsed = 0f;
+            previousAttackFrame = 0;
+            firedThisAttack = false;
+            AttackFinished = false;
+            previousState = state;
+        }
+        else
+        {
+            elapsed += Mathf.Max(0f, deltaTime);
+        }
+
+        if (Mathf.Abs(velocity.x) > 0.01f)
+            spriteRenderer.flipX = velocity.x < 0f;
+
+        var frames = SelectFrames(state, velocity, out var framesPerSecond, out var loops);
+        if (frames == null || frames.Length == 0)
+            return false;
+
+        var rawFrame = Mathf.FloorToInt(elapsed * framesPerSecond);
+        var frame = loops ? rawFrame % frames.Length : Mathf.Min(rawFrame, frames.Length - 1);
+        spriteRenderer.sprite = frames[frame];
+
+        var shouldFire = state == EnemyState.Attack &&
+                         EnemyAttackTimeline.ShouldFire(previousAttackFrame, frame, firedThisAttack);
+        if (shouldFire)
+            firedThisAttack = true;
+
+        previousAttackFrame = frame;
+        AttackFinished = state == EnemyState.Attack && rawFrame >= frames.Length;
+        return shouldFire;
+    }
+
+    private Sprite[] SelectFrames(EnemyState state, Vector2 velocity, out float framesPerSecond, out bool loops)
+    {
+        loops = true;
+        switch (state)
+        {
+            case EnemyState.Dead:
+                framesPerSecond = deathFramesPerSecond;
+                loops = false;
+                return deathFrames;
+            case EnemyState.Attack:
+                framesPerSecond = attackFramesPerSecond;
+                loops = false;
+                return attackFrames;
+            case EnemyState.Chase:
+            case EnemyState.Retreat:
+                framesPerSecond = moveFramesPerSecond;
+                return moveFrames;
+            case EnemyState.Patrol:
+                if (velocity.sqrMagnitude > 0.0001f)
+                {
+                    framesPerSecond = moveFramesPerSecond;
+                    return moveFrames;
+                }
+                break;
+        }
+
+        framesPerSecond = idleFramesPerSecond;
+        return idleFrames;
+    }
+}

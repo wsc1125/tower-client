@@ -28,12 +28,16 @@ public sealed class InventoryTests
     }
 
     [Test]
-    public void TryAdd_RejectsTwentyFirstItem()
+    public void TryAdd_RejectsItemWhenBagIsFull()
     {
         var inventory = new Inventory();
+        Assert.That(Inventory.BagCapacity, Is.EqualTo(72));
+
         for (var i = 0; i < Inventory.BagCapacity; i++)
             Assert.That(inventory.TryAdd(CreateItem(EquipmentSlotType.MeleeWeapon)), Is.True);
 
+        Assert.That(inventory.GetBagItem(Inventory.BagCapacity - 1), Is.Not.Null);
+        Assert.That(inventory.GetBagItem(Inventory.BagCapacity), Is.Null);
         Assert.That(inventory.TryAdd(CreateItem(EquipmentSlotType.MeleeWeapon)), Is.False);
     }
 

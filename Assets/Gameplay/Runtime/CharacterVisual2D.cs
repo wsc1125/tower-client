@@ -17,6 +17,7 @@ public sealed class CharacterVisual2D : MonoBehaviour
 
     private SpriteFrameAnimation animation;
     private FacingDirection facing = FacingDirection.Right;
+    private Vector2? facingOverride;
 
     public FacingDirection Facing => facing;
 
@@ -35,12 +36,18 @@ public sealed class CharacterVisual2D : MonoBehaviour
         return velocity.sqrMagnitude > MotionEpsilon * MotionEpsilon;
     }
 
+    public void SetFacingOverride(Vector2? aimDirection)
+    {
+        facingOverride = aimDirection;
+    }
+
     public void SetMotion(Vector2 velocity)
     {
         if (animation == null)
             animation = new SpriteFrameAnimation(moveFrames, framesPerSecond);
 
-        if (TryResolveFacing(velocity, out var resolved))
+        var facingSource = facingOverride.HasValue ? facingOverride.Value : velocity;
+        if (TryResolveFacing(facingSource, out var resolved))
             ApplyFacing(resolved);
 
         if (IsMoving(velocity))

@@ -10,6 +10,10 @@ public class PlayerMovement2D : MonoBehaviour
 
     private Vector2 resolvedInput;
 
+    public Vector2 ResolvedInput => resolvedInput;
+
+    public CharacterVisual2D Visual => visual;
+
     public static Vector2 ResolveMovementInput(Vector2 keyboardInput, Vector2 joystickInput)
     {
         return Vector2.ClampMagnitude(Vector2.ClampMagnitude(keyboardInput, 1f) + Vector2.ClampMagnitude(joystickInput, 1f), 1f);

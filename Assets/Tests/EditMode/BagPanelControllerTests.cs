@@ -12,7 +12,7 @@ public sealed class BagPanelControllerTests
         var content = new GameObject("Content");
         content.transform.SetParent(root.transform);
         var controller = root.AddComponent<BagPanelController>();
-        controller.Configure(content, null, null, null, null);
+        controller.Configure(content, null, null, null);
         var originalTimeScale = Time.timeScale;
 
         controller.Close();
@@ -29,7 +29,7 @@ public sealed class BagPanelControllerTests
     {
         var root = new GameObject("Controller");
         var controller = root.AddComponent<BagPanelController>();
-        controller.Configure(root, null, null, null, null);
+        controller.Configure(root, null, null, null);
         var sword = CreateItem(EquipmentSlotType.MeleeWeapon);
         controller.Model.TryAdd(sword);
 
@@ -55,7 +55,7 @@ public sealed class BagPanelControllerTests
         serializedSlot.ApplyModifiedPropertiesWithoutUndo();
 
         var controller = root.AddComponent<BagPanelController>();
-        controller.Configure(root, new[] { slot }, null, null, null);
+        controller.Configure(root, new[] { slot }, null, null);
         var item = CreateItem(EquipmentSlotType.MeleeWeapon);
         controller.BeginDrag(BagDragSource.FromBag(0, item), null);
         controller.SetTargetHighlight(frame, BagDropTarget.Bag(0), true);
@@ -106,7 +106,7 @@ public sealed class BagPanelControllerTests
         serialized.FindProperty("holder").objectReferenceValue = holder;
         serialized.ApplyModifiedPropertiesWithoutUndo();
 
-        controller.Configure(controllerRoot, null, null, null, null);
+        controller.Configure(controllerRoot, null, null, null);
 
         Assert.That(controller.Model, Is.SameAs(holder.Model));
 
