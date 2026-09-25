@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -13,7 +14,7 @@ public sealed class TowerResultPanelController : MonoBehaviour
     [SerializeField] private GameObject panelRoot;
     [SerializeField] private TowerResultRowView[] rows;
     [SerializeField] private Text totalValueText;
-    [SerializeField] private Text floorText;
+    [SerializeField] private TMP_Text floorText;
     [SerializeField] private Button confirmButton;
 
     /// <summary>玩家点了确认按钮。</summary>

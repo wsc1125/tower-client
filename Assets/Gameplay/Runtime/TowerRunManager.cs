@@ -102,7 +102,14 @@ public sealed class TowerRunManager : MonoBehaviour
         MovePlayerTo(center);
 
         if (cameraFollow != null)
+        {
+            // 房间是运行时实例化的，相机上的 roomBounds 引用必须每层重新指向新房间，
+            // 否则相机取不到包围盒，视野会跑出房间贴图之外。
+            if (currentRoom != null)
+                cameraFollow.SetRoomBounds(currentRoom.transform);
+
             cameraFollow.CaptureRoomBounds();
+        }
 
         var plan = FloorGenerator.Generate(floor, config, random);
         SpawnEnemies(plan, center);
@@ -232,7 +239,9 @@ public sealed class TowerRunManager : MonoBehaviour
             yield break;
         }
 
-        SpawnPortal(nextPortalPrefab, center);
+        // 传送点不能生成在房间中心：玩家每层都被放在中心，若传送点也落在中心会立刻触发，
+        // 导致「清空后瞬间跳层」。这里沿 X 轴偏移，玩家需要主动走过去才算进入。
+        SpawnPortal(nextPortalPrefab, center + new Vector2(portalOffsetX, 0f));
     }
 
     private void SpawnPortal(FloorPortal2D prefab, Vector2 position)

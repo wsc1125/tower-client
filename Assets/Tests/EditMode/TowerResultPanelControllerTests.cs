@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using NUnit.Framework;
+using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
@@ -10,7 +11,7 @@ public sealed class TowerResultPanelControllerTests
     private GameObject panelRoot;
     private TowerResultRowView[] rows;
     private Text totalValueText;
-    private Text floorText;
+    private TextMeshProUGUI floorText;
     private Button confirmButton;
 
     [SetUp]
@@ -36,7 +37,7 @@ public sealed class TowerResultPanelControllerTests
 
         var floorObject = new GameObject("Floor");
         floorObject.transform.SetParent(panelRoot.transform);
-        floorText = floorObject.AddComponent<Text>();
+        floorText = floorObject.AddComponent<TextMeshProUGUI>();
 
         var buttonObject = new GameObject("Confirm");
         buttonObject.transform.SetParent(panelRoot.transform);

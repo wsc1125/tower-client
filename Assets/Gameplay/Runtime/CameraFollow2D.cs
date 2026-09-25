@@ -31,6 +31,16 @@ public sealed class CameraFollow2D : MonoBehaviour
         target = value;
     }
 
+    /// <summary>
+    /// 设置房间包围盒来源。房间是运行时实例化的，每层换房后必须重新指向新房间，
+    /// 否则相机仍按旧房间（或空引用）夹取视野。
+    /// </summary>
+    public void SetRoomBounds(Transform value)
+    {
+        roomBounds = value;
+        hasBounds = false;
+    }
+
     /// <summary>由房间下的渲染器求世界包围盒；没有可用渲染器时返回 false。</summary>
     public bool CaptureRoomBounds()
     {

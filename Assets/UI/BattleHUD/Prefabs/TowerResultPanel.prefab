@@ -218,7 +218,7 @@ MonoBehaviour:
   - {fileID: 4894227630566508171}
   - {fileID: 2289200850149561057}
   totalValueText: {fileID: 5190120516130995067}
-  floorText: {fileID: 0}
+  floorText: {fileID: 7072347685827895532}
   confirmButton: {fileID: 7047559321062738730}
 --- !u!1 &425929805431574882
 GameObject:
