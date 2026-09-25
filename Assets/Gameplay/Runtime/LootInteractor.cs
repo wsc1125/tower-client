@@ -14,6 +14,9 @@ public sealed class LootInteractor : MonoBehaviour
     [SerializeField] private InventoryHolder inventory;
     [SerializeField] private LootPanelController panel;
 
+    [Tooltip("爬塔流程管理器。拾取成功后把物品记入本局战利品清单，用于撤退结算。留空则不记录。")]
+    [SerializeField] private TowerRunManager towerRun;
+
     private readonly List<DroppedItem2D> current = new List<DroppedItem2D>();
     private readonly List<DroppedItem2D> previous = new List<DroppedItem2D>();
     private readonly List<LootEntry> entries = new List<LootEntry>();
@@ -50,8 +53,8 @@ public sealed class LootInteractor : MonoBehaviour
         if (panel == null)
             return;
 
-        var enemies = FindObjectsOfType<EnemyBrain2D>();
-        if (LootScan.HasAliveEnemyWithin(enemies, transform.position, combatRadius))
+        var damageables = CollectDamageables();
+        if (LootScan.HasAliveEnemyWithin(damageables, transform.position, combatRadius))
         {
             HidePanel();
             return;
@@ -93,19 +96,48 @@ public sealed class LootInteractor : MonoBehaviour
             panel.Show(entries);
     }
 
+    /// <summary>
+    /// 收集场上所有可受伤目标。必须覆盖全部敌人类型（含虫群与 Boss），
+    /// 否则「附近有敌人」判定会漏，战斗中点开拾取列表。
+    /// 与 RifleShooter2D.FindNearestEnemy 同构，避免 FindObjectsOfType&lt;MonoBehaviour&gt; 的全量扫描。
+    /// </summary>
+    public static IDamageable[] CollectDamageables()
+    {
+        var brains = FindObjectsOfType<EnemyBrain2D>(false);
+        var swarms = FindObjectsOfType<SwarmChaser2D>(false);
+        var bosses = FindObjectsOfType<BossBrain2D>(false);
+
+        var result = new IDamageable[brains.Length + swarms.Length + bosses.Length];
+        var index = 0;
+        for (var i = 0; i < brains.Length; i++)
+            result[index++] = brains[i];
+        for (var i = 0; i < swarms.Length; i++)
+            result[index++] = swarms[i];
+        for (var i = 0; i < bosses.Length; i++)
+            result[index++] = bosses[i];
+
+        return result;
+    }
+
     /// <summary>拾取的唯一入口。将来接联机时只改这个方法内部：发请求 + 服务器校验后再发货。</summary>
     public bool TryPickup(DroppedItem2D dropped)
     {
         if (dropped == null || inventory == null || dropped.Item == null)
             return false;
 
-        if (!inventory.Model.TryAdd(dropped.Item))
+        // 局内拾取进「出征携带」（carry），与局内背包面板展示的是同一份数据；
+        // 仓库（bag）只在主菜单里管理，战斗内不展示。
+        if (!inventory.Model.TryAddToCarry(dropped.Item))
         {
             if (panel != null)
                 panel.ShowHint("背包已满");
 
             return false;
         }
+
+        // 记入本局战利品清单，撤退结算面板据此展示。
+        if (towerRun != null)
+            towerRun.State.RecordLoot(dropped.Item);
 
         if (Application.isPlaying)
             Destroy(dropped.gameObject);
