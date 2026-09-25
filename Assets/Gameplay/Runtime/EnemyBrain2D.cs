@@ -32,7 +32,7 @@ public sealed class EnemyHealth
 }
 
 [RequireComponent(typeof(Rigidbody2D))]
-public sealed class EnemyBrain2D : MonoBehaviour
+public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
 {
     [Header("目标")]
     [SerializeField] private Transform player;
@@ -55,12 +55,20 @@ public sealed class EnemyBrain2D : MonoBehaviour
     [Header("生命")]
     [SerializeField] private float maximumHealth = 30f;
 
+    /// <summary>未经层数缩放的基础血量。ScaleMaximumHealth 每次都基于它重算，避免重复调用指数膨胀。</summary>
+    private float baseMaximumHealth;
+
     [Header("攻击")]
     [SerializeField] private EnemyVisual2D visual;
     [SerializeField] private Transform muzzlePoint;
     [SerializeField] private EnemyLaserProjectile2D laserPrefab;
+    [SerializeField] private SpawnerSummoner2D summoner;
+    [SerializeField] private ArtilleryMortar2D mortar;
     [SerializeField] private float laserSpeed = 7f;
     [SerializeField] private float attackCooldown = 1.5f;
+
+    /// <summary>激光伤害系数，由 EnemyStatScaler 按层数写入。1 表示不缩放。</summary>
+    private float laserDamageMultiplier = 1f;
 
     [SerializeField] private Rigidbody2D body;
     [SerializeField] private Collider2D bodyCollider;
@@ -133,6 +141,32 @@ public sealed class EnemyBrain2D : MonoBehaviour
         return isAttacking && !isDead && hasAttackFrames && !attackFinished;
     }
 
+    /// <summary>
+    /// 按层数缩放血量上限。必须在 <see cref="Awake"/> 之前调用才有效
+    /// （Awake 会创建 health 实例），因此调用方需先 SetActive(false) 再缩放再 SetActive(true)。
+    /// 每次调用都基于原始基础血量重算，重复调用不会指数膨胀。
+    /// </summary>
+    public void ScaleMaximumHealth(float multiplier)
+    {
+        if (multiplier <= 0f)
+            return;
+
+        if (baseMaximumHealth <= 0f)
+            baseMaximumHealth = maximumHealth;
+
+        maximumHealth = baseMaximumHealth * multiplier;
+        health = new EnemyHealth(maximumHealth);
+    }
+
+    /// <summary>设置激光伤害系数。由 <see cref="EnemyStatScaler"/> 按层数调用。</summary>
+    public void ScaleLaserDamage(float multiplier)
+    {
+        if (multiplier <= 0f)
+            return;
+
+        laserDamageMultiplier = multiplier;
+    }
+
     public void TakeDamage(float amount)
     {
         EnsureInitialized();
@@ -170,7 +204,12 @@ public sealed class EnemyBrain2D : MonoBehaviour
         if (bodyCollider == null)
             bodyCollider = GetComponent<Collider2D>();
         if (health == null)
-            health = new EnemyHealth(maximumHealth);
+        {
+            if (baseMaximumHealth <= 0f)
+                baseMaximumHealth = maximumHealth;
+
+            health = new EnemyHealth(baseMaximumHealth);
+        }
     }
 
     private void FixedUpdate()
@@ -227,7 +266,14 @@ public sealed class EnemyBrain2D : MonoBehaviour
 
         var shouldFire = visual.Step(state, movementVelocity, Time.fixedDeltaTime);
         if (shouldFire)
-            FireLaser(toPlayer);
+        {
+            if (summoner != null)
+                summoner.Summon();
+            else if (mortar != null)
+                mortar.Fire(player != null ? (Vector2)player.position : (Vector2)transform.position);
+            else
+                FireLaser(toPlayer);
+        }
 
         if (state == EnemyState.Attack && visual.AttackFinished)
             cooldownRemaining = attackCooldown;
@@ -241,6 +287,7 @@ public sealed class EnemyBrain2D : MonoBehaviour
         var direction = toPlayer.sqrMagnitude > 0.0001f ? toPlayer.normalized : Vector2.right;
         var laser = Instantiate(laserPrefab, muzzlePoint.position, Quaternion.identity);
         laser.Launch(direction, laserSpeed, bodyCollider);
+        laser.ScaleDamage(laserDamageMultiplier);
     }
 
     private float GetSpeed(EnemyState current)
