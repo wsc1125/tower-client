@@ -1,0 +1,39 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 66f73c36e22145b40918dd4450693e35, type: 3}
+  m_Name: TowerConfig
+  m_EditorClassIdentifier: 
+  healthGrowthPerFloor: 0.15
+  damageGrowthPerFloor: 0.1
+  floorsPerExtraEnemy: 2
+  maxEnemiesPerFloor: 6
+  retreatEveryFloors: 5
+  enemyPool:
+  - prefab: {fileID: 7530253324970591647, guid: 06d614c147c4f2e46a31ffae08a62706, type: 3}
+    weight: 4
+  - prefab: {fileID: 8021880001658665316, guid: 8c3d3e8f129e73a46819224c824228b8, type: 3}
+    weight: 3
+  - prefab: {fileID: 403210075162133705, guid: 55b32ee9a006534498c81bc3879d7b0a, type: 3}
+    weight: 2
+  - prefab: {fileID: 2133316156098121915, guid: 54d128a062b9edc448177182bec07abe, type: 3}
+    weight: 1
+  lootTiers:
+  - fromFloor: 1
+    table: {fileID: 11400000, guid: 6b471a02a41de6d43adbf4471fde0259, type: 2}
+  - fromFloor: 5
+    table: {fileID: 11400000, guid: adaedc1b749ffba449d92f2054e8d001, type: 2}
+  - fromFloor: 10
+    table: {fileID: 11400000, guid: 42d0e6ce09e6aba4086d0d52e37a21e1, type: 2}
+  - fromFloor: 15
+    table: {fileID: 11400000, guid: 03a1becd60a7de5499a3c63611150932, type: 2}
+  - fromFloor: 20
+    table: {fileID: 11400000, guid: 7a198c3c90add574286ad7ab1a31148a, type: 2}
