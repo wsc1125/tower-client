@@ -14,6 +14,7 @@ public sealed class CollectionServiceTests
     private ItemDefinition ration;
     private ItemDefinition weapon;
     private readonly List<int> grantedRewards = new List<int>();
+    private readonly List<CollectionRewardKind> grantedKinds = new List<CollectionRewardKind>();
 
     [SetUp]
     public void SetUp()
@@ -23,6 +24,7 @@ public sealed class CollectionServiceTests
         CollectionService.ResetForTests();
         GameSession.ResetForTests();
         grantedRewards.Clear();
+        grantedKinds.Clear();
 
         database = ScriptableObject.CreateInstance<ItemDatabase>();
         catalog = ScriptableObject.CreateInstance<CollectionCatalog>();
@@ -33,13 +35,13 @@ public sealed class CollectionServiceTests
         SetDatabaseItems(alloy, ration, weapon);
 
         CollectionService.Configure(database, catalog);
-        CollectionService.RewardGranted += grantedRewards.Add;
+        CollectionService.RewardGranted += HandleRewardGranted;
     }
 
     [TearDown]
     public void TearDown()
     {
-        CollectionService.RewardGranted -= grantedRewards.Add;
+        CollectionService.RewardGranted -= HandleRewardGranted;
         CollectionStore.Delete();
         PlayerSaveStore.Delete();
         CollectionService.ResetForTests();
@@ -123,6 +125,13 @@ public sealed class CollectionServiceTests
 
         // 两件单件奖励 + 全收集 3000。
         Assert.That(grantedRewards, Is.EqualTo(new[] { 30, 30, 3000 }));
+        // 奖励类型必须正确区分，UI 据此决定是否弹全收集提示。
+        Assert.That(grantedKinds, Is.EqualTo(new[]
+        {
+            CollectionRewardKind.Item,
+            CollectionRewardKind.Item,
+            CollectionRewardKind.AllCollected,
+        }));
     }
 
     [Test]
@@ -198,6 +207,12 @@ public sealed class CollectionServiceTests
             "带入地牢的材料（可收藏但未拾取）不应获得收藏资格");
         Assert.That(CollectionService.StateOf(weapon.Id), Is.EqualTo(CollectionState.Locked),
             "带入地牢的装备不应获得收藏资格");
+    }
+
+    private void HandleRewardGranted(int amount, CollectionRewardKind kind)
+    {
+        grantedRewards.Add(amount);
+        grantedKinds.Add(kind);
     }
 
     private void SetDatabaseItems(params ItemDefinition[] items)

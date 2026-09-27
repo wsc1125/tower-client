@@ -15,6 +15,16 @@ public enum CollectionState
     Lit = 2,
 }
 
+/// <summary>奖励类型，供 UI 区分提示方式。</summary>
+public enum CollectionRewardKind
+{
+    /// <summary>点亮单件物品的奖励。</summary>
+    Item = 0,
+
+    /// <summary>全收集额外奖励。</summary>
+    AllCollected = 1,
+}
+
 /// <summary>
 /// 收藏成就的业务门面：撤离结算、点亮、发奖、对账。
 ///
@@ -29,8 +39,11 @@ public static class CollectionService
     private static CollectionProgress progress;
     private static List<ItemDefinition> collectibles;
 
-    /// <summary>发放奖励时触发，参数为星币数量。UI 层据此调用 PlayerCurrency.Add。</summary>
-    public static event Action<int> RewardGranted;
+    /// <summary>
+    /// 发放奖励时触发，参数为（星币数量, 奖励类型）。
+    /// UI 层据此调用 PlayerCurrency.Add，并按类型决定是否弹全收集提示。
+    /// </summary>
+    public static event Action<int, CollectionRewardKind> RewardGranted;
 
     /// <summary>当前进度。首次访问时从存档加载。</summary>
     public static CollectionProgress Progress => progress ??= CollectionStore.Load();
@@ -131,13 +144,13 @@ public static class CollectionService
         if (itemReward > 0)
         {
             reward += itemReward;
-            RewardGranted?.Invoke(itemReward);
+            RewardGranted?.Invoke(itemReward, CollectionRewardKind.Item);
         }
 
         if (allCollected && catalog != null && catalog.AllCollectedReward > 0)
         {
             reward += catalog.AllCollectedReward;
-            RewardGranted?.Invoke(catalog.AllCollectedReward);
+            RewardGranted?.Invoke(catalog.AllCollectedReward, CollectionRewardKind.AllCollected);
         }
 
         return true;

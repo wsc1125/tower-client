@@ -1,5 +1,4 @@
 using System.Collections;
-using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -15,7 +14,6 @@ public sealed class CollectionPanelController : MonoBehaviour
     [Header("面板引用")]
     [SerializeField] private GameObject modalRoot;
     [SerializeField] private CanvasGroup modalGroup;
-    [SerializeField] private RectTransform panelBody;
     [SerializeField] private Button maskButton;
     [SerializeField] private Button closeButton;
 
@@ -147,30 +145,24 @@ public sealed class CollectionPanelController : MonoBehaviour
         Refresh();
     }
 
-    private void HandleRewardGranted(int amount)
+    private void HandleRewardGranted(int amount, CollectionRewardKind kind)
     {
         if (currency != null)
             currency.Add(amount);
 
-        // 区分「单件奖励」与「全收集奖励」：CollectionService 已把二者分两次广播
-        // （先发单件奖励，再单独发全收集奖励），因此这里用金额相等来判断。
-        // 该判断可行的依据：全收集奖励（默认 3000）远大于任何单件奖励（30~1000），
-        // 且单件奖励按品质表发放，不会恰好等于全收集奖励额。
-        if (catalog != null && amount == catalog.AllCollectedReward)
-            ShowAllCollectedPopup();
+        // 按奖励类型区分提示方式：全收集奖励单独弹窗。
+        if (kind == CollectionRewardKind.AllCollected)
+            ShowAllCollectedPopup(amount);
     }
 
     /// <summary>显示全收集达成弹窗。</summary>
-    private void ShowAllCollectedPopup()
+    private void ShowAllCollectedPopup(int amount)
     {
         if (allCollectedPopup == null)
             return;
 
         if (allCollectedPopupText != null)
-        {
-            var amount = catalog != null ? catalog.AllCollectedReward : 0;
             allCollectedPopupText.text = $"全收集达成！获得 {amount} 星币";
-        }
 
         allCollectedPopup.SetActive(true);
     }
