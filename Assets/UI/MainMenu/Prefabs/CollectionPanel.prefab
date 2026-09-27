@@ -1169,7 +1169,6 @@ GameObject:
   m_Component:
   - component: {fileID: 3642149566778823251}
   - component: {fileID: 2370456671325259808}
-  - component: {fileID: 7436803052812869894}
   m_Layer: 0
   m_Name: Content
   m_TagString: Untagged
@@ -1236,20 +1235,6 @@ MonoBehaviour:
   m_Spacing: {x: 24, y: 24}
   m_Constraint: 1
   m_ConstraintCount: 4
---- !u!114 &7436803052812869894
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2070200699925018981}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 3245ec927659c4140ac4f8d17403cc18, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  m_HorizontalFit: 0
-  m_VerticalFit: 2
 --- !u!1 &2101144075310790025
 GameObject:
   m_ObjectHideFlags: 0
@@ -5272,6 +5257,8 @@ MonoBehaviour:
   - {fileID: 2520531324576716892}
   - {fileID: 4496756560571548044}
   - {fileID: 8315198826880969500}
+  slotContainer: {fileID: 3642149566778823251}
+  slotGrid: {fileID: 2370456671325259808}
   progressText: {fileID: 6295079085506888517}
   allCollectedText: {fileID: 2177168978112519883}
   allCollectedPopup: {fileID: 6199115791724334732}

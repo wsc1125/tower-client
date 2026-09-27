@@ -22,6 +22,12 @@ public sealed class CollectionPanelController : MonoBehaviour
     [Tooltip("预置的收藏图标视图（一屏格数）。图鉴超出时按需克隆最后一个作为模板。")]
     [SerializeField] private CollectionSlotView[] slots;
 
+    [Tooltip("格子容器。其高度由本脚本按 GridLayoutGroup 的 preferredHeight 驱动。")]
+    [SerializeField] private RectTransform slotContainer;
+
+    [Tooltip("格子容器上的网格布局。用于计算内容总高度。")]
+    [SerializeField] private GridLayoutGroup slotGrid;
+
     [Header("文本")]
     [SerializeField] private TMP_Text progressText;
     [SerializeField] private TMP_Text allCollectedText;
@@ -121,6 +127,8 @@ public sealed class CollectionPanelController : MonoBehaviour
             }
         }
 
+        ApplyContainerHeight();
+
         if (progressText != null)
         {
             var lit = CollectionService.LitCount;
@@ -162,6 +170,28 @@ public sealed class CollectionPanelController : MonoBehaviour
             clone.name = "Slot_" + runtimeSlots.Count.ToString("00");
             runtimeSlots.Add(clone);
         }
+    }
+
+    /// <summary>
+    /// 按网格实际内容高度撑开容器，供 ScrollRect 滚动。
+    ///
+    /// 不用 ContentSizeFitter：它与 GridLayoutGroup 会形成循环依赖
+    /// （fitter 要 grid 的 preferredHeight，grid 要 rect 的 width，而 rect 的 height 又由 fitter 决定），
+    /// 实测 preferredHeight 恒为 0、所有格子堆在原点。改为显式赋值即可打破循环。
+    /// </summary>
+    private void ApplyContainerHeight()
+    {
+        if (slotContainer == null || slotGrid == null)
+            return;
+
+        // 先让网格按当前宽度算出内容高度，再写回容器。
+        LayoutRebuilder.ForceRebuildLayoutImmediate(slotContainer);
+        var height = slotGrid.preferredHeight;
+        if (height <= 0f)
+            return;
+
+        slotContainer.sizeDelta = new Vector2(slotContainer.sizeDelta.x, height);
+        LayoutRebuilder.ForceRebuildLayoutImmediate(slotContainer);
     }
 
     private void HandleSlotClicked(string id)
