@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -18,7 +19,7 @@ public sealed class CollectionPanelController : MonoBehaviour
     [SerializeField] private Button closeButton;
 
     [Header("图标")]
-    [Tooltip("收藏图标视图，数量等于一屏格数（16）。")]
+    [Tooltip("预置的收藏图标视图（一屏格数）。图鉴超出时按需克隆最后一个作为模板。")]
     [SerializeField] private CollectionSlotView[] slots;
 
     [Header("文本")]
@@ -41,6 +42,7 @@ public sealed class CollectionPanelController : MonoBehaviour
     [SerializeField] private float closeDuration = 0.1f;
 
     private Coroutine animationRoutine;
+    private readonly List<CollectionSlotView> runtimeSlots = new List<CollectionSlotView>();
 
     public bool IsOpen => modalRoot != null && modalRoot.activeSelf;
 
@@ -98,24 +100,24 @@ public sealed class CollectionPanelController : MonoBehaviour
     {
         var items = CollectionService.Collectibles;
 
-        if (slots != null)
-        {
-            for (var i = 0; i < slots.Length; i++)
-            {
-                if (slots[i] == null)
-                    continue;
+        EnsureSlotCount(items.Count);
 
-                if (i < items.Count)
-                {
-                    var item = items[i];
-                    slots[i].gameObject.SetActive(true);
-                    slots[i].Bind(item, CollectionService.StateOf(item.Id), HandleSlotClicked);
-                }
-                else
-                {
-                    // 图鉴不足一屏时隐藏多余格子。
-                    slots[i].gameObject.SetActive(false);
-                }
+        for (var i = 0; i < runtimeSlots.Count; i++)
+        {
+            var slot = runtimeSlots[i];
+            if (slot == null)
+                continue;
+
+            if (i < items.Count)
+            {
+                var item = items[i];
+                slot.gameObject.SetActive(true);
+                slot.Bind(item, CollectionService.StateOf(item.Id), HandleSlotClicked);
+            }
+            else
+            {
+                // 图鉴不足一屏时隐藏多余格子。
+                slot.gameObject.SetActive(false);
             }
         }
 
@@ -134,6 +136,31 @@ public sealed class CollectionPanelController : MonoBehaviour
             allCollectedText.text = done
                 ? $"全收集奖励：{amount} 星币  [已达成]"
                 : $"全收集奖励：{amount} 星币  [未达成]";
+        }
+    }
+
+    /// <summary>
+    /// 保证格子数量不少于图鉴条目数：预置格子不够时，克隆最后一个作为模板继续追加。
+    /// 这样图鉴新增物品后无需改 prefab 即可自动多出格子（超出视口靠 ScrollRect 滑动）。
+    /// </summary>
+    private void EnsureSlotCount(int required)
+    {
+        if (runtimeSlots.Count == 0 && slots != null)
+            runtimeSlots.AddRange(slots);
+
+        if (required <= runtimeSlots.Count)
+            return;
+
+        var template = runtimeSlots.Count > 0 ? runtimeSlots[runtimeSlots.Count - 1] : null;
+        if (template == null)
+            return;
+
+        var parent = template.transform.parent;
+        while (runtimeSlots.Count < required)
+        {
+            var clone = Instantiate(template, parent);
+            clone.name = "Slot_" + runtimeSlots.Count.ToString("00");
+            runtimeSlots.Add(clone);
         }
     }
 
