@@ -19,7 +19,9 @@ public sealed class CollectionServiceTests
     public void SetUp()
     {
         CollectionStore.Delete();
+        PlayerSaveStore.Delete();
         CollectionService.ResetForTests();
+        GameSession.ResetForTests();
         grantedRewards.Clear();
 
         database = ScriptableObject.CreateInstance<ItemDatabase>();
@@ -39,7 +41,9 @@ public sealed class CollectionServiceTests
     {
         CollectionService.RewardGranted -= grantedRewards.Add;
         CollectionStore.Delete();
+        PlayerSaveStore.Delete();
         CollectionService.ResetForTests();
+        GameSession.ResetForTests();
         Object.DestroyImmediate(database);
         Object.DestroyImmediate(catalog);
     }
@@ -177,12 +181,12 @@ public sealed class CollectionServiceTests
     [Test]
     public void ExtractRaid_UnlocksLootButNotCarriedEquipment()
     {
-        // 出征：把武器放进携带（模拟玩家带进地牢的装备）。
-        GameSession.ResetForTests();
+        // 出征：把武器与一件材料放进携带（模拟玩家带进地牢的东西）。
         GameSession.EnsureInitialized(database);
         GameSession.Raid.TryAddToCarry(TestItems.Instance(weapon));
+        GameSession.Raid.TryAddToCarry(TestItems.Instance(ration));
 
-        // 局内捡到一件材料。
+        // 局内只捡到合金。
         GameSession.Raid.TryAddToCarry(TestItems.Instance(alloy));
         GameSession.Raid.RecordLoot(TestItems.Instance(alloy));
 
@@ -190,6 +194,8 @@ public sealed class CollectionServiceTests
 
         Assert.That(CollectionService.StateOf(alloy.Id), Is.EqualTo(CollectionState.Obtained),
             "局内拾取的材料应获得收藏资格");
+        Assert.That(CollectionService.StateOf(ration.Id), Is.EqualTo(CollectionState.Locked),
+            "带入地牢的材料（可收藏但未拾取）不应获得收藏资格");
         Assert.That(CollectionService.StateOf(weapon.Id), Is.EqualTo(CollectionState.Locked),
             "带入地牢的装备不应获得收藏资格");
     }
