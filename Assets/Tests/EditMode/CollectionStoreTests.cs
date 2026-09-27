@@ -59,6 +59,21 @@ public sealed class CollectionStoreTests
     }
 
     [Test]
+    public void Load_WithExplicitNullLists_ReturnsEmptyProgress()
+    {
+        // JsonUtility 对 JSON 中显式 null 的列表字段会置 null，Validate() 负责补齐。
+        PlayerPrefs.SetString(
+            CollectionStore.PrefsKey,
+            "{\"version\":1,\"obtainedIds\":null,\"litIds\":null,\"allCollectedRewarded\":false}");
+        PlayerPrefs.Save();
+
+        var progress = CollectionStore.Load();
+
+        Assert.That(progress.ObtainedIds, Is.Empty, "显式 null 的列表应被补齐为空");
+        Assert.That(progress.LitIds, Is.Empty);
+    }
+
+    [Test]
     public void Load_ReconcilesLitIdsIntoObtainedIds()
     {
         // 手工写入一份 litIds 有、obtainedIds 没有的脏存档。

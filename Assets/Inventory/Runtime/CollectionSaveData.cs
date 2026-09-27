@@ -15,7 +15,7 @@ public sealed class CollectionSaveData
     public List<string> litIds = new List<string>();
     public bool allCollectedRewarded;
 
-    /// <summary>补齐可能为 null 的列表（JsonUtility 对缺失字段会给 null）。</summary>
+    /// <summary>补齐可能为 null 的列表（JsonUtility 对 JSON 中显式 null 的列表字段会置 null）。</summary>
     public void Validate()
     {
         obtainedIds ??= new List<string>();
