@@ -178,20 +178,35 @@ public sealed class CollectionPanelController : MonoBehaviour
     /// 不用 ContentSizeFitter：它与 GridLayoutGroup 会形成循环依赖
     /// （fitter 要 grid 的 preferredHeight，grid 要 rect 的 width，而 rect 的 height 又由 fitter 决定），
     /// 实测 preferredHeight 恒为 0、所有格子堆在原点。改为显式赋值即可打破循环。
+    ///
+    /// 注意：刚 SetActive(true) 的同一帧，容器宽度可能尚未算出，preferredHeight 会是 0。
+    /// 因此本方法在面板打开期间由 LateUpdate 持续校正，直到高度稳定。
     /// </summary>
     private void ApplyContainerHeight()
     {
         if (slotContainer == null || slotGrid == null)
             return;
 
-        // 先让网格按当前宽度算出内容高度，再写回容器。
-        LayoutRebuilder.ForceRebuildLayoutImmediate(slotContainer);
+        // 容器宽度为 0 时网格无法换行，算不出高度，等下一帧。
+        if (slotContainer.rect.width <= 0f)
+            return;
+
         var height = slotGrid.preferredHeight;
         if (height <= 0f)
             return;
 
+        if (Mathf.Approximately(slotContainer.sizeDelta.y, height))
+            return;
+
         slotContainer.sizeDelta = new Vector2(slotContainer.sizeDelta.x, height);
         LayoutRebuilder.ForceRebuildLayoutImmediate(slotContainer);
+    }
+
+    private void LateUpdate()
+    {
+        // 面板打开期间持续校正容器高度：分辨率变化、格子增删都能自适应。
+        if (IsOpen)
+            ApplyContainerHeight();
     }
 
     private void HandleSlotClicked(string id)
