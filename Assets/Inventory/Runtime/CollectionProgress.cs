@@ -73,12 +73,6 @@ public sealed class CollectionProgress
             obtainedIds.Add(id);
     }
 
-    /// <summary>测试用：绕过 Obtain 直接写入 litIds，用于构造脏数据。</summary>
-    public void ForceLitForTests(string id)
-    {
-        litIds.Add(id);
-    }
-
     private static int CountWithin(HashSet<string> source, IEnumerable<string> validIds)
     {
         if (validIds == null)

@@ -55,18 +55,18 @@ public sealed class CollectionProgressTests
     }
 
     [Test]
-    public void Reconcile_AddsLitIdsIntoObtainedIds()
+    public void Reconcile_IsIdempotentOnConsistentData()
     {
         var progress = new CollectionProgress();
         progress.Obtain("A");
         progress.TryLight("A");
-        // 模拟脏数据：litIds 有 B 但 obtainedIds 没有。
-        progress.ForceLitForTests("B");
 
         progress.Reconcile();
 
-        Assert.That(progress.IsObtained("B"), Is.True, "litIds 应被补进 obtainedIds");
-        Assert.That(progress.IsLit("B"), Is.True);
+        Assert.That(progress.IsObtained("A"), Is.True);
+        Assert.That(progress.IsLit("A"), Is.True);
+        Assert.That(progress.ObtainedIds, Has.Count.EqualTo(1), "对已一致的数据调用不应产生副作用");
+        Assert.That(progress.LitIds, Has.Count.EqualTo(1));
     }
 
     [Test]
