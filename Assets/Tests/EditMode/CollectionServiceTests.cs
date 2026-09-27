@@ -174,6 +174,26 @@ public sealed class CollectionServiceTests
         Assert.That(CollectionService.StateOf(alloy.Id), Is.EqualTo(CollectionState.Obtained));
     }
 
+    [Test]
+    public void ExtractRaid_UnlocksLootButNotCarriedEquipment()
+    {
+        // 出征：把武器放进携带（模拟玩家带进地牢的装备）。
+        GameSession.ResetForTests();
+        GameSession.EnsureInitialized(database);
+        GameSession.Raid.TryAddToCarry(TestItems.Instance(weapon));
+
+        // 局内捡到一件材料。
+        GameSession.Raid.TryAddToCarry(TestItems.Instance(alloy));
+        GameSession.Raid.RecordLoot(TestItems.Instance(alloy));
+
+        GameSession.ExtractRaid();
+
+        Assert.That(CollectionService.StateOf(alloy.Id), Is.EqualTo(CollectionState.Obtained),
+            "局内拾取的材料应获得收藏资格");
+        Assert.That(CollectionService.StateOf(weapon.Id), Is.EqualTo(CollectionState.Locked),
+            "带入地牢的装备不应获得收藏资格");
+    }
+
     private void SetDatabaseItems(params ItemDefinition[] items)
     {
         var serialized = new SerializedObject(database);
