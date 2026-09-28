@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -42,6 +43,11 @@ public sealed class TowerRunManager : MonoBehaviour
     [Tooltip("敌人巡逻路径的半宽。以出生点为中心水平往返。")]
     [SerializeField] private float enemyPatrolHalfWidth = 1.5f;
 
+    [Header("随机")]
+    [Tooltip("本局的随机种子。0 表示每局自动生成（单机默认）；非 0 则固定，便于复现问题。\n" +
+             "联机时由主机生成并广播给所有客户端，保证各端生成同一层。")]
+    [SerializeField] private int randomSeed;
+
     private readonly TowerRunState state = new TowerRunState();
     private readonly List<GameObject> spawnedEnemies = new List<GameObject>();
     private readonly List<FloorPortal2D> spawnedPortals = new List<FloorPortal2D>();
@@ -51,6 +57,9 @@ public sealed class TowerRunManager : MonoBehaviour
     private bool portalsSpawned;
     private bool subscribedDeath;
     private bool subscribedPortalConfirm;
+
+    /// <summary>本局实际使用的随机种子。0 表示尚未确定（Awake 时会自动生成）。</summary>
+    public int RandomSeed => randomSeed;
 
     /// <summary>当前已订阅的确认面板实例。用于判断订阅是否仍然有效。</summary>
     private PortalConfirmPanelController subscribedPortalTarget;
@@ -83,7 +92,32 @@ public sealed class TowerRunManager : MonoBehaviour
 
     private void Awake()
     {
-        random = new System.Random();
+        EnsureRandom();
+    }
+
+    /// <summary>
+    /// 确保随机源已就绪。种子为 0 时自动生成一个（单机默认行为，每局不同）；
+    /// 非 0 时用配置的种子，便于复现问题。
+    /// </summary>
+    private void EnsureRandom()
+    {
+        if (random != null)
+            return;
+
+        if (randomSeed == 0)
+            randomSeed = Environment.TickCount;
+
+        random = new System.Random(randomSeed);
+    }
+
+    /// <summary>
+    /// 注入本局的随机种子。必须在 <see cref="Start"/> 之前调用（Start 会生成第一层）。
+    /// 联机时由主机生成种子并广播，各客户端调用本方法后即可生成完全一致的层。
+    /// </summary>
+    public void SetRandomSeed(int seed)
+    {
+        randomSeed = seed;
+        random = new System.Random(seed);
     }
 
     private void OnEnable()
@@ -542,7 +576,7 @@ public sealed class TowerRunManager : MonoBehaviour
                 continue;
 
             var angle = 360f * i / Mathf.Max(1, plan.Enemies.Length);
-            var radius = Random.Range(enemySpawnRadiusMin, enemySpawnRadiusMax);
+            var radius = NextFloat(enemySpawnRadiusMin, enemySpawnRadiusMax);
             var offset = Quaternion.Euler(0f, 0f, angle) * (Vector3)(Vector2.right * radius);
             var position = ResolveSpawnPosition(center + (Vector2)offset);
 
@@ -570,9 +604,10 @@ public sealed class TowerRunManager : MonoBehaviour
 
             // 掉落池与层数在运行时注入：敌人 prefab 上不再硬编码掉落表，
             // 掉落概率由全局掉落池按当前层数解析（层数越高，高品质概率越高）。
+            // 随机源一并注入，使掉落掷点也走本局种子（联机时各端一致）。
             var dropper = enemy.GetComponent<LootDropper>();
             if (dropper != null)
-                dropper.Configure(plan.LootPool, plan.Floor);
+                dropper.Configure(plan.LootPool, plan.Floor, random);
 
             enemy.SetActive(true);
 
@@ -646,6 +681,17 @@ public sealed class TowerRunManager : MonoBehaviour
         var y = yMin <= yMax ? Mathf.Clamp(desired.y, yMin, yMax) : roomBounds.center.y;
 
         return new Vector2(x, y);
+    }
+
+    /// <summary>
+    /// 用本局随机源取 [min, max) 区间内的浮点数。
+    /// 不用 <c>UnityEngine.Random</c>：那是全局静态状态，无法按局固定种子，
+    /// 联机时各端会算出不同的出生半径。
+    /// </summary>
+    private float NextFloat(float min, float max)
+    {
+        EnsureRandom();
+        return min + (float)random.NextDouble() * (max - min);
     }
 
     private void MovePlayerTo(Vector2 position)
