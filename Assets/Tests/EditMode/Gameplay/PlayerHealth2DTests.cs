@@ -65,6 +65,20 @@ public class PlayerHealth2DTests
     }
 
     [Test]
+    public void TakeDamage_RaisesArmorChangedWithoutReachingIntoGameSession()
+    {
+        var player = new GameObject("Player");
+        var health = player.AddComponent<PlayerHealth2D>();
+        var count = 0;
+        health.ArmorChanged += () => count++;
+
+        health.TakeDamage(10f);
+
+        Assert.That(count, Is.EqualTo(1));
+        Object.DestroyImmediate(player);
+    }
+
+    [Test]
     public void TakeDamage_DoesNotRaiseDamagedWhenAmountIsZero()
     {
         var player = new GameObject("Player");

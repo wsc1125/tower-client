@@ -177,6 +177,12 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
     /// </summary>
     public event Action<float> Damaged;
 
+    /// <summary>
+    /// 护甲耐久发生变化时触发。由上层决定是否同步到玩家资产、存档或网络状态。
+    /// PlayerHealth2D 不直接写入 GameSession。
+    /// </summary>
+    public event Action ArmorChanged;
+
     public float CurrentHealth => health != null ? health.Current : maximumHealth;
     public float MaximumHealth => health != null ? health.Maximum : maximumHealth;
     public bool IsDead => health != null && health.IsDead;
@@ -240,8 +246,8 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
         // 记下受击时刻：此后 combatLockDuration 秒内禁止使用消耗品。
         lastHitTime = Time.time;
 
-        // 耐久变了，通知局外数据变更（装备槽与局外同一份，背包面板据此刷新耐久条）。
-        GameSession.Loadout.NotifyChanged();
+        // 耐久变了，通知上层（由上层决定是否写入资产 / 存档 / 网络状态）。
+        ArmorChanged?.Invoke();
 
         // 只有真正扣掉血才广播，避免「护甲全挡下」也触发受击反馈。
         var actualDamage = before - health.Current;
@@ -315,7 +321,7 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
         if (repaired > 0)
         {
             RefreshView();
-            GameSession.Loadout.NotifyChanged();
+            ArmorChanged?.Invoke();
         }
 
         return repaired;
@@ -338,7 +344,7 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
         if (repaired > 0)
         {
             RefreshArmor();
-            GameSession.Loadout.NotifyChanged();
+            ArmorChanged?.Invoke();
         }
 
         return repaired;
