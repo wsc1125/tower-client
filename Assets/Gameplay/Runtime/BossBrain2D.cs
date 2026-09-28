@@ -13,7 +13,14 @@ using UnityEngine;
 public sealed class BossBrain2D : MonoBehaviour, IDamageable
 {
     [Header("目标")]
+    [Tooltip("手工指定的攻击目标。留空则由目标解析器自动解析（单机下即场景中的玩家）。")]
     [SerializeField] private Transform player;
+
+    /// <summary>
+    /// 目标解析器。未注入时由 <see cref="EnsureTargetProvider"/> 创建默认实现，
+    /// 单机下行为与旧的 <c>FindObjectOfType&lt;PlayerMovement2D&gt;()</c> 等价。
+    /// </summary>
+    private ITargetProvider targetProvider;
 
     [Header("距离")]
     [SerializeField] private float detectionRange = 12f;
@@ -110,13 +117,56 @@ public sealed class BossBrain2D : MonoBehaviour, IDamageable
     private void Awake()
     {
         EnsureInitialized();
+        EnsureTargetProvider();
+    }
 
-        if (player == null)
+    /// <summary>
+    /// 确保目标解析器已就绪。
+    /// <see cref="player"/> 在 Inspector 上手工指定时优先用它；
+    /// 否则用默认解析器（单机下等价于旧的 <c>FindObjectOfType&lt;PlayerMovement2D&gt;()</c>）。
+    /// </summary>
+    private void EnsureTargetProvider()
+    {
+        if (targetProvider != null)
+            return;
+
+        var provider = new NearestPlayerTargetProvider();
+        provider.SetSelf(transform);
+        if (player != null)
+            provider.SetExplicitTarget(player);
+
+        targetProvider = provider;
+    }
+
+    /// <summary>
+    /// 注入自定义的目标解析器。联机时由生成方按玩家列表构造后注入。
+    /// 传 null 则恢复为默认解析器。
+    /// </summary>
+    public void SetTargetProvider(ITargetProvider provider)
+    {
+        targetProvider = provider;
+    }
+
+    /// <summary>
+    /// 取当前目标位置。返回 false 表示当前没有可用目标，
+    /// 调用方应退化为「无目标」行为（不攻击）。
+    /// </summary>
+    private bool TryGetTargetPosition(out Vector2 position)
+    {
+        EnsureTargetProvider();
+
+        if (targetProvider != null && targetProvider.TryGetTargetPosition(out position))
+            return true;
+
+        // 兜底：解析器不可用时退回 Inspector 上手工指定的目标。
+        if (player != null)
         {
-            var playerMovement = FindObjectOfType<PlayerMovement2D>();
-            if (playerMovement != null)
-                player = playerMovement.transform;
+            position = player.position;
+            return true;
         }
+
+        position = Vector2.zero;
+        return false;
     }
 
     private void EnsureInitialized()
@@ -139,8 +189,8 @@ public sealed class BossBrain2D : MonoBehaviour, IDamageable
 
         cooldownRemaining = Mathf.Max(0f, cooldownRemaining - Time.fixedDeltaTime);
 
-        var hasPlayer = player != null;
-        var toPlayer = hasPlayer ? (Vector2)(player.position - transform.position) : Vector2.zero;
+        var hasPlayer = TryGetTargetPosition(out var targetPosition);
+        var toPlayer = hasPlayer ? targetPosition - (Vector2)transform.position : Vector2.zero;
         var playerDistance = hasPlayer ? toPlayer.magnitude : float.PositiveInfinity;
 
         // BOSS 原地不动：不调用 MovePosition，避免大型碰撞体被玩家挤压位移。
