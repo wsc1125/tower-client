@@ -5,25 +5,23 @@ using UnityEngine;
 public sealed class LootInteractorTests
 {
     private GameObject playerRoot;
-    private GameObject holderRoot;
     private GameObject panelRoot;
     private GameObject droppedRoot;
     private LootInteractor interactor;
-    private InventoryHolder holder;
     private LootPanelController panel;
     private DroppedItem2D dropped;
     private ItemDefinition item;
+    private ItemInstance instance;
 
     [SetUp]
     public void SetUp()
     {
+        GameSession.ResetForTests();
         item = ItemDefinitionFactory.Create(null, null, 0.4f);
+        instance = ItemInstance.Create(item);
 
         playerRoot = new GameObject("Player");
         interactor = playerRoot.AddComponent<LootInteractor>();
-
-        holderRoot = new GameObject("Holder");
-        holder = holderRoot.AddComponent<InventoryHolder>();
 
         panelRoot = new GameObject("LootPanel");
         panel = panelRoot.AddComponent<LootPanelController>();
@@ -36,10 +34,9 @@ public sealed class LootInteractorTests
 
         droppedRoot = new GameObject("Dropped");
         dropped = droppedRoot.AddComponent<DroppedItem2D>();
-        dropped.Initialize(item);
+        dropped.Initialize(instance);
 
         var serialized = new SerializedObject(interactor);
-        serialized.FindProperty("inventory").objectReferenceValue = holder;
         serialized.FindProperty("panel").objectReferenceValue = panel;
         serialized.ApplyModifiedPropertiesWithoutUndo();
     }
@@ -48,10 +45,10 @@ public sealed class LootInteractorTests
     public void TearDown()
     {
         Object.DestroyImmediate(playerRoot);
-        Object.DestroyImmediate(holderRoot);
         Object.DestroyImmediate(panelRoot);
         Object.DestroyImmediate(droppedRoot);
         Object.DestroyImmediate(item);
+        GameSession.ResetForTests();
     }
 
     [Test]
@@ -60,18 +57,24 @@ public sealed class LootInteractorTests
         var result = interactor.TryPickup(dropped);
 
         Assert.That(result, Is.True);
-        Assert.That(holder.Model.GetCarryItem(0), Is.SameAs(item));
+        Assert.That(GameSession.Raid.GetCarry(0), Is.SameAs(instance));
         Assert.That(dropped == null, Is.True, "掉落物应被销毁");
+    }
+
+    [Test]
+    public void TryPickup_RecordsLootForResultPanel()
+    {
+        interactor.TryPickup(dropped);
+
+        Assert.That(GameSession.Raid.Loot.Count, Is.EqualTo(1));
+        Assert.That(GameSession.Raid.Loot[0], Is.SameAs(instance));
     }
 
     [Test]
     public void TryPickup_ReturnsFalseWhenCarryIsFull()
     {
-        for (var i = 0; i < Inventory.CarryCapacity; i++)
-        {
-            var filler = ItemDefinitionFactory.Create(null, null, 0.4f);
-            holder.Model.TryAddToCarry(filler);
-        }
+        for (var i = 0; i < RaidBag.CarryCapacity; i++)
+            GameSession.Raid.TryAddToCarry(ItemInstance.Create(ItemDefinitionFactory.Create(null, null, 0.4f)));
 
         var result = interactor.TryPickup(dropped);
 
@@ -89,8 +92,8 @@ public sealed class LootInteractorTests
         serializedPanel.FindProperty("hintText").objectReferenceValue = hint;
         serializedPanel.ApplyModifiedPropertiesWithoutUndo();
 
-        for (var i = 0; i < Inventory.CarryCapacity; i++)
-            holder.Model.TryAddToCarry(ItemDefinitionFactory.Create(null, null, 0.4f));
+        for (var i = 0; i < RaidBag.CarryCapacity; i++)
+            GameSession.Raid.TryAddToCarry(ItemInstance.Create(ItemDefinitionFactory.Create(null, null, 0.4f)));
 
         interactor.TryPickup(dropped);
 

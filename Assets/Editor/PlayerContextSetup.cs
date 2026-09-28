@@ -4,8 +4,8 @@ using UnityEngine;
 using UnityEngine.SceneManagement;
 
 /// <summary>
-/// 统一配置玩家库存宿主：主菜单与战斗场景各有一个 InventoryHolder，
-/// 两者都从同一份存档读写，并共享同一套首次建档的初始装备。
+/// 统一配置玩家数据入口：把 <see cref="ItemDatabase"/> 接到主菜单与战斗场景里所有需要它的组件上。
+/// 玩家数据本身由 <see cref="GameSession"/> 在进程内单例持有，不再需要场景里的库存宿主。
 /// </summary>
 public static class PlayerContextSetup
 {
@@ -13,18 +13,13 @@ public static class PlayerContextSetup
     private const string BattleScenePath = "Assets/Scenes/BattleScene.unity";
     private const string ItemDatabasePath = "Assets/Inventory/Items/ItemDatabase.asset";
 
-    private static readonly string[] InitialItemPaths =
-    {
-        "Assets/Inventory/Items/TrainingSword.asset",
-        "Assets/Inventory/Items/TrainingBow.asset",
-    };
-
+    /// <summary>首次建档时穿在身上的初始装备。</summary>
     private static readonly string[] InitialEquippedPaths =
     {
         "Assets/Inventory/Items/Rifle.asset",
     };
 
-    [MenuItem("Tools/仓库/配置玩家库存宿主")]
+    [MenuItem("Tools/仓库/配置玩家数据入口")]
     public static void Configure()
     {
         var database = AssetDatabase.LoadAssetAtPath<ItemDatabase>(ItemDatabasePath);
@@ -36,7 +31,7 @@ public static class PlayerContextSetup
 
         AssetDatabase.SaveAssets();
         AssetDatabase.Refresh();
-        Debug.Log("[PlayerContextSetup] 玩家库存宿主配置完成。");
+        Debug.Log("[PlayerContextSetup] 玩家数据入口配置完成。");
     }
 
     private static void ConfigureMainMenu(ItemDatabase database)
@@ -45,14 +40,22 @@ public static class PlayerContextSetup
         var saved = false;
         try
         {
-            var holder = contents.GetComponentInChildren<InventoryHolder>(true);
-            if (holder == null)
+            var wired = 0;
+            foreach (var controller in contents.GetComponentsInChildren<LoadoutPanelController>(true))
             {
-                Debug.LogError("[PlayerContextSetup] MainMenu 中找不到 InventoryHolder。");
-                return;
+                SetDatabase(controller, database);
+                wired++;
             }
 
-            Apply(holder, database);
+            foreach (var controller in contents.GetComponentsInChildren<ShopPanelController>(true))
+            {
+                SetDatabase(controller, database);
+                wired++;
+            }
+
+            if (wired == 0)
+                Debug.LogWarning("[PlayerContextSetup] MainMenu 中未找到需要 ItemDatabase 的面板。");
+
             PrefabUtility.SaveAsPrefabAsset(contents, MainMenuPrefabPath);
             saved = true;
         }
@@ -74,14 +77,19 @@ public static class PlayerContextSetup
 
         try
         {
-            var holder = FindHolder(scene);
-            if (holder == null)
+            var wired = 0;
+            foreach (var root in scene.GetRootGameObjects())
             {
-                Debug.LogError("[PlayerContextSetup] BattleScene 中找不到 InventoryHolder。");
-                return;
+                foreach (var controller in root.GetComponentsInChildren<BagPanelController>(true))
+                {
+                    SetDatabase(controller, database);
+                    wired++;
+                }
             }
 
-            Apply(holder, database);
+            if (wired == 0)
+                Debug.LogWarning("[PlayerContextSetup] BattleScene 中未找到需要 ItemDatabase 的面板。");
+
             EditorSceneManager.MarkSceneDirty(scene);
             EditorSceneManager.SaveScene(scene);
         }
@@ -92,38 +100,19 @@ public static class PlayerContextSetup
         }
     }
 
-    private static InventoryHolder FindHolder(Scene scene)
+    /// <summary>把登记表写入组件的 database 字段。</summary>
+    private static void SetDatabase(Object target, ItemDatabase database)
     {
-        foreach (var root in scene.GetRootGameObjects())
+        var serialized = new SerializedObject(target);
+        var property = serialized.FindProperty("database");
+        if (property == null)
         {
-            var holder = root.GetComponentInChildren<InventoryHolder>(true);
-            if (holder != null)
-                return holder;
+            Debug.LogWarning($"[PlayerContextSetup] {target.GetType().Name} 上没有 database 字段，已跳过。");
+            return;
         }
 
-        return null;
-    }
-
-    /// <summary>写入存档开关、物品登记表与首次建档用的初始装备。</summary>
-    private static void Apply(InventoryHolder holder, ItemDatabase database)
-    {
-        var serialized = new SerializedObject(holder);
-        serialized.FindProperty("loadFromSave").boolValue = true;
-        serialized.FindProperty("database").objectReferenceValue = database;
-
-        var items = serialized.FindProperty("initialItems");
-        items.arraySize = InitialItemPaths.Length;
-        for (var i = 0; i < InitialItemPaths.Length; i++)
-            items.GetArrayElementAtIndex(i).objectReferenceValue =
-                AssetDatabase.LoadAssetAtPath<ItemDefinition>(InitialItemPaths[i]);
-
-        var equipped = serialized.FindProperty("initialEquippedItems");
-        equipped.arraySize = InitialEquippedPaths.Length;
-        for (var i = 0; i < InitialEquippedPaths.Length; i++)
-            equipped.GetArrayElementAtIndex(i).objectReferenceValue =
-                AssetDatabase.LoadAssetAtPath<ItemDefinition>(InitialEquippedPaths[i]);
-
+        property.objectReferenceValue = database;
         serialized.ApplyModifiedPropertiesWithoutUndo();
-        EditorUtility.SetDirty(holder);
+        EditorUtility.SetDirty(target);
     }
 }

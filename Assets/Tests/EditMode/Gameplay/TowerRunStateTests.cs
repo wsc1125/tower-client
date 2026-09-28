@@ -1,6 +1,9 @@
 using NUnit.Framework;
-using UnityEngine;
 
+/// <summary>
+/// <see cref="TowerRunState"/> 的层数与结束标记。
+/// 战利品清单已移到 <see cref="RaidBag"/>，因此这里不再覆盖拾取。
+/// </summary>
 public sealed class TowerRunStateTests
 {
     private TowerRunState state;
@@ -12,15 +15,14 @@ public sealed class TowerRunStateTests
     }
 
     [Test]
-    public void BeginRun_StartsAtFloorOneWithEmptyLoot()
+    public void BeginRun_StartsAtFloorOneAndNotFinished()
     {
         state.AdvanceFloor();
-        state.RecordLoot(ScriptableObject.CreateInstance<ItemDefinition>());
+        state.Finish();
 
         state.BeginRun();
 
         Assert.That(state.CurrentFloor, Is.EqualTo(1));
-        Assert.That(state.CollectedLoot.Count, Is.Zero);
         Assert.That(state.IsFinished, Is.False);
     }
 
@@ -37,40 +39,19 @@ public sealed class TowerRunStateTests
     }
 
     [Test]
-    public void RecordLoot_AppendsInOrderAndIgnoresNull()
-    {
-        var first = ScriptableObject.CreateInstance<ItemDefinition>();
-        var second = ScriptableObject.CreateInstance<ItemDefinition>();
-
-        state.BeginRun();
-        state.RecordLoot(first);
-        state.RecordLoot(null);
-        state.RecordLoot(second);
-
-        Assert.That(state.CollectedLoot.Count, Is.EqualTo(2));
-        Assert.That(state.CollectedLoot[0], Is.SameAs(first));
-        Assert.That(state.CollectedLoot[1], Is.SameAs(second));
-
-        Object.DestroyImmediate(first);
-        Object.DestroyImmediate(second);
-    }
-
-    [Test]
-    public void ClearLoot_EmptiesCollectedLoot()
-    {
-        state.BeginRun();
-        state.RecordLoot(ScriptableObject.CreateInstance<ItemDefinition>());
-
-        state.ClearLoot();
-
-        Assert.That(state.CollectedLoot.Count, Is.Zero);
-    }
-
-    [Test]
     public void Finish_MarksRunAsFinished()
     {
         state.BeginRun();
 
+        state.Finish();
+
+        Assert.That(state.IsFinished, Is.True);
+    }
+
+    [Test]
+    public void Finish_IsIdempotent()
+    {
+        state.Finish();
         state.Finish();
 
         Assert.That(state.IsFinished, Is.True);

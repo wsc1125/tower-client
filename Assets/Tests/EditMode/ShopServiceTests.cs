@@ -1,4 +1,4 @@
-using NUnit.Framework;
+﻿using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 
@@ -8,18 +8,22 @@ public sealed class ShopServiceTests
     private ItemDefinition bow;
     private ItemDefinition helmet;
     private ItemDefinition milk;
+    private ItemDefinition medKit;
     private ItemDatabase database;
 
     [SetUp]
     public void SetUp()
     {
-        sword = CreateItem("Sword", EquipmentSlotType.MeleeWeapon, 120);
-        bow = CreateItem("Bow", EquipmentSlotType.RangedWeapon, 90);
+        sword = CreateItem("Sword", EquipmentSlotType.MainHand, 120);
+        bow = CreateItem("Bow", EquipmentSlotType.OffHand, 90);
         helmet = CreateItem("Helmet", EquipmentSlotType.Helmet, 200);
-        milk = CreateItem("Milk", EquipmentSlotType.None, 30);
+        // 纯战利品：不占装备槽且未定价，不应上架。
+        milk = CreateItem("Milk", EquipmentSlotType.None, 0);
+        // 消耗品：不占装备槽但已定价，应上架。
+        medKit = CreateItem("MedKit", EquipmentSlotType.None, 240);
 
         database = ScriptableObject.CreateInstance<ItemDatabase>();
-        SetDatabaseItems(database, sword, bow, helmet, milk);
+        SetDatabaseItems(database, sword, bow, helmet, milk, medKit);
     }
 
     [TearDown]
@@ -30,16 +34,20 @@ public sealed class ShopServiceTests
         Object.DestroyImmediate(bow);
         Object.DestroyImmediate(helmet);
         Object.DestroyImmediate(milk);
+        Object.DestroyImmediate(medKit);
     }
 
     [Test]
-    public void GetCatalog_IncludesWeaponsAndArmor_ExcludesConsumables()
+    public void GetCatalog_IncludesPricedItems_ExcludesUnpricedLoot()
     {
         var catalog = ShopService.GetCatalog(database);
 
         Assert.That(catalog.Contains(sword), Is.True);
         Assert.That(catalog.Contains(bow), Is.True);
         Assert.That(catalog.Contains(helmet), Is.True);
+        // 消耗品已定价，应上架。
+        Assert.That(catalog.Contains(medKit), Is.True);
+        // 纯战利品未定价，不上架。
         Assert.That(catalog.Contains(milk), Is.False);
     }
 
@@ -52,36 +60,38 @@ public sealed class ShopServiceTests
     [Test]
     public void TryPurchase_Success_AddsItemAndDeductsBalance()
     {
-        var model = new Inventory();
+        var loadout = new PlayerLoadout();
 
-        var result = ShopService.TryPurchase(sword, model, 200, out var remaining);
+        var result = ShopService.TryPurchase(sword, loadout, 200, out var remaining);
 
         Assert.That(result, Is.True);
         Assert.That(remaining, Is.EqualTo(80));
-        Assert.That(model.GetBagItem(0), Is.SameAs(sword));
+        // 商店卖的是模板，入库时现场创建实例。
+        Assert.That(loadout.GetWarehouse(0), Is.Not.Null);
+        Assert.That(loadout.GetWarehouse(0).Definition, Is.SameAs(sword));
     }
 
     [Test]
     public void TryPurchase_InsufficientBalance_FailsWithoutChanges()
     {
-        var model = new Inventory();
+        var loadout = new PlayerLoadout();
 
-        var result = ShopService.TryPurchase(sword, model, 119, out var remaining);
+        var result = ShopService.TryPurchase(sword, loadout, 119, out var remaining);
 
         Assert.That(result, Is.False);
         Assert.That(remaining, Is.EqualTo(119));
-        Assert.That(model.GetBagItem(0), Is.Null);
+        Assert.That(loadout.GetWarehouse(0), Is.Null);
     }
 
     [Test]
-    public void TryPurchase_FullBag_FailsAndKeepsBalance()
+    public void TryPurchase_FullWarehouse_FailsAndKeepsBalance()
     {
-        var model = new Inventory();
-        var filler = CreateItem("Filler", EquipmentSlotType.MeleeWeapon, 1);
-        for (var i = 0; i < Inventory.BagCapacity; i++)
-            model.TryAdd(filler);
+        var loadout = new PlayerLoadout();
+        var filler = ItemInstance.Create(CreateItem("Filler", EquipmentSlotType.MainHand, 1));
+        for (var i = 0; i < PlayerLoadout.WarehouseCapacity; i++)
+            loadout.TryAddToWarehouse(filler);
 
-        var result = ShopService.TryPurchase(sword, model, 999, out var remaining);
+        var result = ShopService.TryPurchase(sword, loadout, 999, out var remaining);
 
         Assert.That(result, Is.False);
         Assert.That(remaining, Is.EqualTo(999));
@@ -90,10 +100,10 @@ public sealed class ShopServiceTests
     [Test]
     public void TryPurchase_UnpricedItem_Fails()
     {
-        var unpriced = CreateItem("Unpriced", EquipmentSlotType.MeleeWeapon, 0);
-        var model = new Inventory();
+        var unpriced = CreateItem("Unpriced", EquipmentSlotType.MainHand, 0);
+        var loadout = new PlayerLoadout();
 
-        var result = ShopService.TryPurchase(unpriced, model, 999, out var remaining);
+        var result = ShopService.TryPurchase(unpriced, loadout, 999, out var remaining);
 
         Assert.That(result, Is.False);
         Assert.That(remaining, Is.EqualTo(999));
@@ -101,11 +111,11 @@ public sealed class ShopServiceTests
     }
 
     [Test]
-    public void TryPurchase_NullItemOrModel_Fails()
+    public void TryPurchase_NullItemOrLoadout_Fails()
     {
-        var model = new Inventory();
+        var loadout = new PlayerLoadout();
 
-        Assert.That(ShopService.TryPurchase(null, model, 999, out _), Is.False);
+        Assert.That(ShopService.TryPurchase(null, loadout, 999, out _), Is.False);
         Assert.That(ShopService.TryPurchase(sword, null, 999, out _), Is.False);
     }
 

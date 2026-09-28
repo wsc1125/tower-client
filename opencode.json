@@ -1,0 +1,19 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "unity": {
+        "type": "local",
+        "command": [
+          "node",
+          "C:\\Users\\16648\\unity-mcp-server\\src\\index.js"
+        ],
+        "environment": {
+          "UNITY_HUB_PATH": "C:\\Program Files\\Unity Hub\\Unity Hub.exe",
+          "UNITY_BRIDGE_HOST": "127.0.0.1",
+          "UNITY_BRIDGE_PORT": "7890"
+        }
+      }
+    }
+  }
+}

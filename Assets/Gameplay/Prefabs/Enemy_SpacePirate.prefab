@@ -28,7 +28,7 @@ Transform:
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
   m_LocalPosition: {x: 0, y: 0, z: 0}
-  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_LocalScale: {x: 0.6667, y: 0.6667, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 587737777456221926}
@@ -140,6 +140,7 @@ GameObject:
   - component: {fileID: 4278038888119578624}
   - component: {fileID: 4803574964597471302}
   - component: {fileID: 1619024075497894831}
+  - component: {fileID: 8044046493411844580}
   m_Layer: 0
   m_Name: Enemy_SpacePirate
   m_TagString: Untagged
@@ -241,7 +242,7 @@ MonoBehaviour:
   patrolPointA: {x: 3.8, y: -1}
   patrolPointB: {x: 5.8, y: -1}
   patrolSpeed: 1.2
-  chaseSpeed: 3.8
+  chaseSpeed: 3.2
   retreatSpeed: 1.8
   patrolArriveDistance: 0.1
   detectionRange: 7
@@ -253,8 +254,12 @@ MonoBehaviour:
   visual: {fileID: 5775988274870595606}
   muzzlePoint: {fileID: 0}
   laserPrefab: {fileID: 0}
+  summoner: {fileID: 0}
+  mortar: {fileID: 0}
+  melee: {fileID: 8044046493411844580}
   laserSpeed: 7
   attackCooldown: 1.2
+  recoverDuration: 0.7
   body: {fileID: 7537327550230243465}
   bodyCollider: {fileID: 4278038888119578624}
 --- !u!114 &1619024075497894831
@@ -270,6 +275,20 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   enemy: {fileID: 4803574964597471302}
-  lootTable: {fileID: 11400000, guid: 5bd7ab5ac357a1541bc52d9ef1dc1960, type: 2}
   dropPrefab: {fileID: 8539051744257114867, guid: 0cd59b7cb2b010e40a61e69996f0af08, type: 3}
   scatterRadius: 0.35
+--- !u!114 &8044046493411844580
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7530253324970591647}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cef419da48d81094cb3bead5329389c1, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  attackRange: 1.6
+  damage: 12
+  hitOffset: {x: 0, y: 0.6}

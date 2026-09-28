@@ -92,6 +92,15 @@ public sealed class EnemyLaserProjectile2D : MonoBehaviour
 
     private void OnTriggerEnter2D(Collider2D other)
     {
+        // 掩体挡子弹：撞上实体掩体即销毁，不结算伤害。
+        // 这条判定必须放在玩家判定之前——掩体与玩家可能同时被触发体覆盖，
+        // 若先判玩家，贴着掩体站位的玩家会「隔着掩体被打中」。
+        if (other.GetComponentInParent<Obstacle2D>() != null)
+        {
+            Destroy(gameObject);
+            return;
+        }
+
         // 只对玩家结算伤害；撞到其他弹丸 / 敌人 / 场景装饰时直接穿过，不销毁。
         var playerHealth = other.GetComponentInParent<PlayerHealth2D>();
         if (playerHealth == null)

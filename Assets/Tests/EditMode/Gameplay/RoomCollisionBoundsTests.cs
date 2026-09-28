@@ -1,17 +1,17 @@
 using NUnit.Framework;
-using UnityEditor.SceneManagement;
+using UnityEditor;
 using UnityEngine;
 
 public class RoomCollisionBoundsTests
 {
-    private const string ScenePath = "Assets/Scenes/BattleScene.unity";
+    private const string RoomPrefabPath = "Assets/Environment/BattleRoom/Prefabs/Room_Battle_Closed_01.prefab";
 
     [Test]
     public void BattleScene_RoomUsesDedicatedCollisionBoundsInsteadOfVisualWallColliders()
     {
-        EditorSceneManager.OpenScene(ScenePath);
-
-        var room = GameObject.Find("Room_Battle_Closed_01");
+        // 房间由 TowerRunManager 在运行时实例化，场景里没有常驻实例，
+        // 因此直接检查房间 prefab 资产。
+        var room = AssetDatabase.LoadAssetAtPath<GameObject>(RoomPrefabPath);
         Assert.That(room, Is.Not.Null);
 
         var walls = room.transform.Find("Walls");
@@ -35,6 +35,9 @@ public class RoomCollisionBoundsTests
         Assert.That(top.Size.y, Is.LessThanOrEqualTo(1.5f));
         Assert.That(bottom.Size.y, Is.LessThanOrEqualTo(1.5f));
 
+        // 四条边界必须首尾相接围成闭合矩形：横墙要盖住竖墙的中心线，竖墙要盖住横墙的中心线。
+        // 注意用「中心线」而非「外沿」比较——横墙比竖墙间距略短是正常的，
+        // 只要竖墙中心落在横墙跨度内，角落就不会漏缝。
         Assert.That(top.Min.x, Is.LessThanOrEqualTo(left.Center.x));
         Assert.That(top.Max.x, Is.GreaterThanOrEqualTo(right.Center.x));
         Assert.That(bottom.Min.x, Is.LessThanOrEqualTo(left.Center.x));

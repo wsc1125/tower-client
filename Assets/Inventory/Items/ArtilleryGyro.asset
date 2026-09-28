@@ -1,0 +1,32 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 48f1b289f06becb40b4d01230f97a0da, type: 3}
+  m_Name: ArtilleryGyro
+  m_EditorClassIdentifier: 
+  displayName: "\u70AE\u53F0\u9640\u87BA\u4EEA"
+  icon: {fileID: 21300000, guid: 6693de1372970754fb0e2ffb7bc639bf, type: 3}
+  worldSprite: {fileID: 21300000, guid: 6693de1372970754fb0e2ffb7bc639bf, type: 3}
+  equipSlotType: 0
+  rarity: 2
+  value: 320
+  buyPrice: 0
+  worldSize: 0.45
+  damage: 10
+  shotsPerSecond: 6
+  bulletSpeed: 14
+  projectilesPerShot: 1
+  spreadAngle: 0
+  bulletSprite: {fileID: 0}
+  flashFrames: []
+  impactSprite: {fileID: 0}
+  damageReduction: 0
+  durability: 0

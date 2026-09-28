@@ -1,17 +1,25 @@
 using UnityEngine;
 
 /// <summary>
-/// 挂在敌人身上，订阅 <see cref="EnemyBrain2D.Died"/>，死亡时按掉落表掷点并生成地面掉落物。
+/// 挂在敌人身上，订阅 <see cref="EnemyBrain2D.Died"/>，死亡时按「全局掉落池 + 当前层数」掷点并生成地面掉落物。
+/// 掉落池与层数由 <see cref="TowerRunManager"/> 在生成敌人时注入，敌人 prefab 上不再硬编码掉落表。
 /// 掷点与生成各自只有一处，后续接入联机时由主机权威调用即可。
 /// </summary>
 public sealed class LootDropper : MonoBehaviour
 {
     [SerializeField] private EnemyBrain2D enemy;
-    [SerializeField] private LootTable lootTable;
     [SerializeField] private DroppedItem2D dropPrefab;
     [SerializeField] private float scatterRadius = 0.35f;
 
+    private LootPool lootPool;
+    private int floor = 1;
     private bool subscribed;
+
+    /// <summary>当前使用的掉落池；未注入时为 null，此时不掉落。</summary>
+    public LootPool LootPool => lootPool;
+
+    /// <summary>当前层数，决定各品质的掉落概率。</summary>
+    public int Floor => floor;
 
     private void Awake()
     {
@@ -44,19 +52,28 @@ public sealed class LootDropper : MonoBehaviour
         subscribed = true;
     }
 
+    /// <summary>注入本层使用的掉落池与层数。由 <see cref="TowerRunManager"/> 在敌人生成时调用。</summary>
+    public void Configure(LootPool pool, int currentFloor)
+    {
+        lootPool = pool;
+        floor = currentFloor < 1 ? 1 : currentFloor;
+    }
+
     /// <summary>敌人死亡时的处理。拆成公开方法以便直接测试；联机化时改为主机权威调用。</summary>
     public void HandleDied()
     {
-        if (lootTable == null || dropPrefab == null)
+        if (lootPool == null || dropPrefab == null)
             return;
 
-        var items = lootTable.Roll(new System.Random());
+        var items = lootPool.Roll(floor, new System.Random());
         foreach (var item in items)
         {
             var offset = Random.insideUnitCircle * scatterRadius;
             var position = (Vector2)transform.position + offset;
             var dropped = Instantiate(dropPrefab, position, Quaternion.identity);
-            dropped.Initialize(item);
+
+            // 掉落池掷出的是模板，落地时现场创建一个满耐久的实例。
+            dropped.Initialize(ItemInstance.Create(item));
         }
     }
 }

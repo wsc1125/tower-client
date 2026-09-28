@@ -11,11 +11,7 @@ public sealed class LootInteractor : MonoBehaviour
     [SerializeField] private float combatRadius = 8f;
     [SerializeField] private int maxEntries = 4;
     [SerializeField] private float scanInterval = 0.2f;
-    [SerializeField] private InventoryHolder inventory;
     [SerializeField] private LootPanelController panel;
-
-    [Tooltip("爬塔流程管理器。拾取成功后把物品记入本局战利品清单，用于撤退结算。留空则不记录。")]
-    [SerializeField] private TowerRunManager towerRun;
 
     private readonly List<DroppedItem2D> current = new List<DroppedItem2D>();
     private readonly List<DroppedItem2D> previous = new List<DroppedItem2D>();
@@ -122,12 +118,12 @@ public sealed class LootInteractor : MonoBehaviour
     /// <summary>拾取的唯一入口。将来接联机时只改这个方法内部：发请求 + 服务器校验后再发货。</summary>
     public bool TryPickup(DroppedItem2D dropped)
     {
-        if (dropped == null || inventory == null || dropped.Item == null)
+        if (dropped == null || dropped.Item == null)
             return false;
 
-        // 局内拾取进「出征携带」（carry），与局内背包面板展示的是同一份数据；
-        // 仓库（bag）只在主菜单里管理，战斗内不展示。
-        if (!inventory.Model.TryAddToCarry(dropped.Item))
+        // 局内拾取进「携带」，与局内背包面板展示的是同一份数据；
+        // 仓库只在主菜单里管理，战斗内不展示。
+        if (!GameSession.Raid.TryAddToCarry(dropped.Item))
         {
             if (panel != null)
                 panel.ShowHint("背包已满");
@@ -136,8 +132,7 @@ public sealed class LootInteractor : MonoBehaviour
         }
 
         // 记入本局战利品清单，撤退结算面板据此展示。
-        if (towerRun != null)
-            towerRun.State.RecordLoot(dropped.Item);
+        GameSession.Raid.RecordLoot(dropped.Item);
 
         if (Application.isPlaying)
             Destroy(dropped.gameObject);
@@ -176,12 +171,12 @@ public sealed class LootInteractor : MonoBehaviour
         entries.Clear();
         foreach (var dropped in current)
         {
-            var item = dropped.Item;
+            var definition = dropped.Definition;
             entries.Add(new LootEntry
             {
-                DisplayName = item != null ? item.DisplayName : string.Empty,
-                Value = item != null ? item.Value : 0,
-                Icon = item != null ? item.Icon : null,
+                DisplayName = definition != null ? definition.DisplayName : string.Empty,
+                Value = definition != null ? definition.Value : 0,
+                Icon = definition != null ? definition.Icon : null,
             });
         }
     }

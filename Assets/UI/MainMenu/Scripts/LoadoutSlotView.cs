@@ -2,18 +2,10 @@ using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
 
-/// <summary>装备配置面板的三个分区。</summary>
-public enum LoadoutSection
-{
-    Warehouse = 0,
-    Carry = 1,
-    Equipment = 2,
-}
-
 /// <summary>
 /// 装备配置面板里的单个格子：底图（frame）+ 品质底板 + 有效高亮 + 物品图标。
-/// 品质底板仅在格内有物品时显示：装备槽靠它盖住底图上的类型劊影，
-/// 仓库 / 背包格靠它表达物品品质，三类格子共用同一套规则。
+/// 品质底板仅在格内有物品时显示：装备槽靠它盖住底图上的类型剪影，
+/// 仓库格靠它表达物品品质，两类格子共用同一套规则。
 /// 支持点击选中与拖拽搬运：拖出时通知控制器生成拖拽图标，
 /// 拖入 / 悬停时询问控制器能否接受，用于高亮反馈。
 /// </summary>
@@ -36,6 +28,13 @@ public sealed class LoadoutSlotView : MonoBehaviour,
     [Tooltip("该格对应的装备槽；仅 Equipment 分区使用。")]
     [SerializeField] private EquipmentSlotType equipmentSlot = EquipmentSlotType.None;
 
+    [Header("耐久条")]
+    [Tooltip("耐久条根节点；仅带耐久的物品（防具 / 消耗品）显示。")]
+    [SerializeField] private GameObject durabilityBar;
+
+    [Tooltip("耐久条填充层，按剩余比例着色。")]
+    [SerializeField] private Image durabilityFill;
+
     private static readonly Color NormalTint = Color.white;
     private static readonly Color SelectedTint = new Color(0.55f, 0.92f, 1f, 1f);
     private static readonly Color DisabledTint = new Color(1f, 1f, 1f, 0.32f);
@@ -46,7 +45,7 @@ public sealed class LoadoutSlotView : MonoBehaviour,
     private LoadoutPanelController controller;
     private LoadoutSection section;
     private int index;
-    private ItemDefinition item;
+    private ItemInstance item;
     private bool interactable = true;
     private bool selected;
 
@@ -54,8 +53,8 @@ public sealed class LoadoutSlotView : MonoBehaviour,
     public int Index => index;
     public EquipmentSlotType EquipmentSlot => equipmentSlot;
 
-    /// <summary>当前格子里的物品；空槽时为 null。拖拽来源判定靠它。</summary>
-    public ItemDefinition Item => item;
+    /// <summary>当前格子里的物品实例；空槽时为 null。拖拽来源判定靠它。</summary>
+    public ItemInstance Item => item;
 
     public void Bind(LoadoutPanelController owner, LoadoutSection ownerSection, int slotIndex)
     {
@@ -66,31 +65,75 @@ public sealed class LoadoutSlotView : MonoBehaviour,
         SetSelected(false);
     }
 
-    public void SetItem(ItemDefinition value)
+    /// <summary>
+    /// 更新本格对应的真实索引。仓库分页时格子是复用的，
+    /// 翻页后必须由控制器把「页内格号 → 仓库真实索引」的结果推下来，
+    /// 否则拖拽 / 点击会命中上一页的格子（显示与交互索引不一致）。
+    /// </summary>
+    public void SetSlotIndex(int slotIndex)
+    {
+        index = slotIndex;
+    }
+
+    public void SetItem(ItemInstance value)
     {
         item = value;
         ApplyQualityPlate(value);
+        ApplyDurability(value);
 
         if (icon == null)
             return;
 
-        icon.sprite = value != null ? value.Icon : null;
-        icon.enabled = value != null && value.Icon != null;
+        var definition = value != null ? value.Definition : null;
+        icon.sprite = definition != null ? definition.Icon : null;
+        icon.enabled = definition != null && definition.Icon != null;
+    }
+
+    /// <summary>
+    /// 刷新耐久条。带耐久的物品（防具 / 消耗品）显示，其余隐藏。
+    /// 与局内背包面板同一套规则，避免两处表现漂移。
+    /// </summary>
+    private void ApplyDurability(ItemInstance value)
+    {
+        if (durabilityBar == null || durabilityFill == null)
+            return;
+
+        var show = value != null && value.HasDurability;
+        durabilityBar.SetActive(show);
+        if (!show)
+            return;
+
+        var ratio = Mathf.Clamp01((float)value.CurrentDurability / value.MaximumDurability);
+        durabilityFill.fillAmount = ratio;
+        durabilityFill.color = DurabilityColor(ratio);
+    }
+
+    /// <summary>耐久越低越红：&gt;50% 绿、&gt;20% 黄、其余红。与局内背包面板同一套规则。</summary>
+    private static Color DurabilityColor(float ratio)
+    {
+        if (ratio > 0.5f)
+            return new Color(0.42f, 0.85f, 0.45f, 1f);
+
+        if (ratio > 0.2f)
+            return new Color(0.95f, 0.78f, 0.30f, 1f);
+
+        return new Color(0.90f, 0.32f, 0.28f, 1f);
     }
 
     /// <summary>有物品才显示品质底板；颜色按物品品质取。</summary>
-    private void ApplyQualityPlate(ItemDefinition value)
+    private void ApplyQualityPlate(ItemInstance value)
     {
         if (qualityPlate == null)
             return;
 
-        var hasItem = value != null;
+        var definition = value != null ? value.Definition : null;
+        var hasItem = definition != null;
         qualityPlate.SetActive(hasItem);
 
         if (!hasItem)
             return;
 
-        var rarityColor = UiTokens.RarityColor(value.Rarity);
+        var rarityColor = UiTokens.RarityColor(definition.Rarity);
         if (qualityBorder != null)
             qualityBorder.color = rarityColor;
 
@@ -134,7 +177,7 @@ public sealed class LoadoutSlotView : MonoBehaviour,
         ApplyVisual();
     }
 
-    /// <summary>本格能否作为拖拽落点：仓库格与背包格看格号是否有效，装备槽看是否启用。</summary>
+    /// <summary>本格能否作为拖拽落点：仓库格 / 携带格看格号是否有效，装备槽看是否启用。</summary>
     private bool CanAcceptDrop()
     {
         if (controller == null)
@@ -159,7 +202,7 @@ public sealed class LoadoutSlotView : MonoBehaviour,
         if (section == LoadoutSection.Equipment && !interactable)
             return;
 
-        controller.BeginDrag(BuildDragSource(), icon);
+        controller.BeginDrag(BuildSlotRef(), icon);
     }
 
     public void OnDrag(PointerEventData eventData)
@@ -174,42 +217,30 @@ public sealed class LoadoutSlotView : MonoBehaviour,
 
     public void OnDrop(PointerEventData eventData)
     {
-        controller?.Drop(BuildDropTarget());
+        controller?.Drop(BuildSlotRef());
     }
 
     public void OnPointerEnter(PointerEventData eventData)
     {
-        controller?.SetTargetHighlight(this, BuildDropTarget(), true);
+        controller?.SetTargetHighlight(this, BuildSlotRef(), true);
     }
 
     public void OnPointerExit(PointerEventData eventData)
     {
-        controller?.SetTargetHighlight(this, BuildDropTarget(), false);
+        controller?.SetTargetHighlight(this, BuildSlotRef(), false);
     }
 
-    private LoadoutDragSource BuildDragSource()
+    /// <summary>本格的位置引用。仓库格 / 携带格用格号，装备槽用槽枚举。</summary>
+    private SlotRef BuildSlotRef()
     {
         switch (section)
         {
-            case LoadoutSection.Carry:
-                return LoadoutDragSource.FromCarry(index, item);
             case LoadoutSection.Equipment:
-                return LoadoutDragSource.FromEquipment(equipmentSlot, item);
-            default:
-                return LoadoutDragSource.FromWarehouse(index, item);
-        }
-    }
-
-    private LoadoutDropTarget BuildDropTarget()
-    {
-        switch (section)
-        {
+                return SlotRef.Equipment(equipmentSlot);
             case LoadoutSection.Carry:
-                return LoadoutDropTarget.Carry(index);
-            case LoadoutSection.Equipment:
-                return LoadoutDropTarget.Equipment(equipmentSlot);
+                return SlotRef.Carry(index);
             default:
-                return LoadoutDropTarget.Warehouse(index);
+                return SlotRef.Warehouse(index);
         }
     }
 

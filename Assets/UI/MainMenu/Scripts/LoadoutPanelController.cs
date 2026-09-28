@@ -3,10 +3,18 @@ using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
+/// <summary>装备配置面板的三个分区。</summary>
+public enum LoadoutSection
+{
+    Warehouse = 0,
+    Equipment = 1,
+    Carry = 2,
+}
+
 /// <summary>
-/// 「装备配置」合并面板（试验区）：左侧仓库（分页网格），右侧顶部 5 个装备槽 + 下方携带背包（5×4），
-/// 右下为物品详情区。支持点击选中、拖拽搬运（仓库 / 背包 / 装备槽之间任意互换）与出售。
-/// 数据来自场景中唯一的 <see cref="InventoryHolder"/>。
+/// 「装备配置」面板：左侧仓库（分页网格），右侧装备槽，右下为物品详情区。
+/// 支持点击选中、拖拽搬运（仓库 ↔ 装备槽任意互换）与出售。
+/// 数据来自 <see cref="GameSession.Loadout"/> —— 局外资产，死亡不会丢失。
 /// </summary>
 public sealed class LoadoutPanelController : MonoBehaviour
 {
@@ -20,8 +28,10 @@ public sealed class LoadoutPanelController : MonoBehaviour
     [Header("格子")]
     [Tooltip("仓库格子视图，数量等于每页格数。")]
     [SerializeField] private LoadoutSlotView[] warehouseSlots;
-    [SerializeField] private LoadoutSlotView[] carrySlots;
     [SerializeField] private LoadoutSlotView[] equipmentSlots;
+
+    [Tooltip("携带背包格子视图。与仓库格共用同一套视图，但读写的是局内携带（RaidBag）。")]
+    [SerializeField] private LoadoutSlotView[] carrySlots;
 
     [Header("计数")]
     [SerializeField] private TMP_Text warehouseCountText;
@@ -45,7 +55,7 @@ public sealed class LoadoutPanelController : MonoBehaviour
     [SerializeField] private Image dragGhost;
 
     [Header("数据")]
-    [SerializeField] private InventoryHolder holder;
+    [SerializeField] private ItemDatabase database;
     [SerializeField] private PlayerCurrency currency;
 
     [Header("动画")]
@@ -60,23 +70,40 @@ public sealed class LoadoutPanelController : MonoBehaviour
 
     private Coroutine animationRoutine;
     private float fitScale = 1f;
-    private LoadoutSection selectedSection = LoadoutSection.Warehouse;
-    private int selectedIndex = -1;
+    private SlotRef selection = SlotRef.None;
 
-    private LoadoutDragSource? activeDrag;
+    private SlotRef? activeDrag;
     private Image dimmedIcon;
     private Image sellButtonImage;
     private LoadoutSlotView highlightedSlot;
 
-    /// <summary>当前读取的玩家库存；未接上 <see cref="InventoryHolder"/> 时为 null。</summary>
-    public Inventory Model { get; private set; }
+    /// <summary>当前读取的局外资产。</summary>
+    public PlayerLoadout Loadout => GameSession.Loadout;
 
     public bool IsOpen => modalRoot != null && modalRoot.activeSelf;
 
-    public LoadoutSection SelectedSection => selectedSection;
+    /// <summary>当前选中的分区；未选中时无意义。</summary>
+    public LoadoutSection SelectedSection
+    {
+        get
+        {
+            if (!selection.IsValid)
+                return LoadoutSection.Warehouse;
+
+            switch (selection.Area)
+            {
+                case SlotArea.Equipment:
+                    return LoadoutSection.Equipment;
+                case SlotArea.Carry:
+                    return LoadoutSection.Carry;
+                default:
+                    return LoadoutSection.Warehouse;
+            }
+        }
+    }
 
     /// <summary>当前选中的格号；语义为「对应分区内的索引」，未选中时为 -1。</summary>
-    public int SelectedIndex => selectedIndex;
+    public int SelectedIndex => selection.IsValid ? selection.Index : -1;
 
     /// <summary>当前仓库页，从 0 开始。</summary>
     public int CurrentPage { get; private set; }
@@ -84,11 +111,11 @@ public sealed class LoadoutPanelController : MonoBehaviour
     private int PageSlotCount => warehouseSlots != null && warehouseSlots.Length > 0 ? warehouseSlots.Length : 1;
 
     /// <summary>仓库总页数，至少为 1。</summary>
-    public int TotalPages => Mathf.Max(1, Mathf.CeilToInt(Inventory.BagCapacity / (float)PageSlotCount));
+    public int TotalPages => Mathf.Max(1, Mathf.CeilToInt(PlayerLoadout.WarehouseCapacity / (float)PageSlotCount));
 
     private void Awake()
     {
-        ResolveModel();
+        GameSession.EnsureInitialized(database);
         BindSlots();
         BindButtons();
         UpdateFitScale();
@@ -101,15 +128,19 @@ public sealed class LoadoutPanelController : MonoBehaviour
         Refresh();
     }
 
+    private void OnEnable()
+    {
+        GameSession.LoadoutChanged += Refresh;
+    }
+
+    private void OnDisable()
+    {
+        GameSession.LoadoutChanged -= Refresh;
+    }
+
     private void OnRectTransformDimensionsChange()
     {
         UpdateFitScale();
-    }
-
-    private void OnDestroy()
-    {
-        if (Model != null)
-            Model.Changed -= Refresh;
     }
 
     public void Toggle()
@@ -163,15 +194,21 @@ public sealed class LoadoutPanelController : MonoBehaviour
     /// <summary>选中某个分区里的某个格子并刷新详情；index 传 -1 表示清空选中。</summary>
     public void Select(LoadoutSection section, int index)
     {
-        if (index < 0 || !IsSelectable(section, index))
+        SlotRef target;
+        switch (section)
         {
-            ClearSelection();
+            case LoadoutSection.Equipment:
+                target = SlotRef.Equipment(SlotTypeAt(index));
+                break;
+            case LoadoutSection.Carry:
+                target = SlotRef.Carry(index);
+                break;
+            default:
+                target = SlotRef.Warehouse(ToWarehouseIndex(index));
+                break;
         }
-        else
-        {
-            selectedSection = section;
-            selectedIndex = index;
-        }
+
+        selection = target.IsValid && ItemAt(target) != null ? target : SlotRef.None;
 
         RefreshDetail();
         RefreshSelectionVisual();
@@ -179,9 +216,9 @@ public sealed class LoadoutPanelController : MonoBehaviour
 
     // ==================== 拖拽搬运 ====================
 
-    public void BeginDrag(LoadoutDragSource source, Image sourceIcon)
+    public void BeginDrag(SlotRef source, Image sourceIcon)
     {
-        if (source.Item == null)
+        if (!source.IsValid || ItemAt(source) == null)
             return;
 
         activeDrag = source;
@@ -191,7 +228,9 @@ public sealed class LoadoutPanelController : MonoBehaviour
 
         if (dragGhost != null)
         {
-            dragGhost.sprite = source.Item.Icon;
+            var instance = ItemAt(source);
+            var definition = instance != null ? instance.Definition : null;
+            dragGhost.sprite = definition != null ? definition.Icon : null;
             dragGhost.enabled = dragGhost.sprite != null;
             dragGhost.raycastTarget = false;
         }
@@ -203,72 +242,37 @@ public sealed class LoadoutPanelController : MonoBehaviour
             dragGhost.rectTransform.position = screenPosition;
     }
 
-    /// <summary>拖拽能否落在目标格：装备槽要类型匹配且已启用，仓库格要在总容量内，不允许原地拖放。</summary>
-    public bool CanDrop(LoadoutDragSource source, LoadoutDropTarget target)
+    /// <summary>拖拽能否落在目标格：装备槽要类型匹配，仓库格 / 携带格要在容量内，不允许原地拖放。</summary>
+    public bool CanDrop(SlotRef from, SlotRef to)
     {
-        if (Model == null || source.Item == null)
+        if (!from.IsValid || !to.IsValid || from.Equals(to))
             return false;
 
-        if (IsSameCell(source, target))
+        var item = ItemAt(from);
+        if (item == null)
             return false;
 
-        switch (target.Kind)
-        {
-            case LoadoutLocationKind.Equipment:
-                return Inventory.IsSlotUsable(target.EquipmentSlot)
-                    && source.Item.EquipSlotType == target.EquipmentSlot;
-            case LoadoutLocationKind.Warehouse:
-                return ToBagIndex(target.Index) >= 0;
-            default:
-                return target.Index >= 0 && target.Index < Inventory.CarryCapacity;
-        }
+        if (to.Area == SlotArea.Equipment)
+            return EquipmentSlots.CanAccept(item, to.EquipmentSlot);
+
+        if (to.Area == SlotArea.Carry)
+            return RaidBag.IsCarryIndex(to.Index);
+
+        return to.Area == SlotArea.Warehouse && to.Index >= 0;
     }
 
-    /// <summary>执行搬运：仓库↔背包、仓库↔装备、背包↔装备、以及同区互换。</summary>
-    public bool TryDrop(LoadoutDragSource source, LoadoutDropTarget target)
+    /// <summary>执行搬运：仓库 ↔ 装备槽 ↔ 携带格，以及同区互换。</summary>
+    public bool TryDrop(SlotRef from, SlotRef to)
     {
-        if (!CanDrop(source, target))
+        if (!CanDrop(from, to))
             return false;
 
-        var sourceBag = source.Kind == LoadoutLocationKind.Warehouse ? ToBagIndex(source.Index) : -1;
-        var targetBag = target.Kind == LoadoutLocationKind.Warehouse ? ToBagIndex(target.Index) : -1;
-
-        switch (source.Kind)
-        {
-            case LoadoutLocationKind.Warehouse:
-                switch (target.Kind)
-                {
-                    case LoadoutLocationKind.Warehouse:
-                        return Model.TrySwapInBag(sourceBag, targetBag);
-                    case LoadoutLocationKind.Carry:
-                        return Model.TrySwapBagAndCarry(sourceBag, target.Index);
-                    default:
-                        return Model.TrySwapBagAndEquipment(sourceBag, target.EquipmentSlot);
-                }
-            case LoadoutLocationKind.Carry:
-                switch (target.Kind)
-                {
-                    case LoadoutLocationKind.Warehouse:
-                        return Model.TrySwapBagAndCarry(targetBag, source.Index);
-                    case LoadoutLocationKind.Carry:
-                        return Model.TrySwapInCarry(source.Index, target.Index);
-                    default:
-                        return Model.TrySwapCarryAndEquipment(source.Index, target.EquipmentSlot);
-                }
-            default:
-                switch (target.Kind)
-                {
-                    case LoadoutLocationKind.Warehouse:
-                        return Model.TrySwapBagAndEquipment(targetBag, source.EquipmentSlot);
-                    case LoadoutLocationKind.Carry:
-                        return Model.TrySwapCarryAndEquipment(target.Index, source.EquipmentSlot);
-                    default:
-                        return false;
-                }
-        }
+        // 局外是唯一允许「仓库 ↔ 携带」自由搬运的地方，因此走 MoveInLoadout。
+        // 局内的 Move 重载会拒绝一切涉及仓库的搬运（携带只能在撤离时并入仓库）。
+        return LoadoutService.MoveInLoadout(GameSession.Raid, Loadout, from, to);
     }
 
-    public void Drop(LoadoutDropTarget target)
+    public void Drop(SlotRef target)
     {
         if (activeDrag.HasValue)
             TryDrop(activeDrag.Value, target);
@@ -295,7 +299,7 @@ public sealed class LoadoutPanelController : MonoBehaviour
     }
 
     /// <summary>拖拽悬停时询问能否放下；只有可放下的格才亮起高亮。</summary>
-    public void SetTargetHighlight(LoadoutSlotView slot, LoadoutDropTarget target, bool highlighted)
+    public void SetTargetHighlight(LoadoutSlotView slot, SlotRef target, bool highlighted)
     {
         if (slot == null)
             return;
@@ -309,77 +313,37 @@ public sealed class LoadoutPanelController : MonoBehaviour
             highlightedSlot = null;
     }
 
-    /// <summary>源与目标是同一格（原地拖回），不视为有效放置。</summary>
-    private static bool IsSameCell(LoadoutDragSource source, LoadoutDropTarget target)
-    {
-        if (source.Kind != target.Kind)
-            return false;
-
-        if (source.Kind == LoadoutLocationKind.Equipment)
-            return source.EquipmentSlot == target.EquipmentSlot;
-
-        return source.Index == target.Index;
-    }
-
     // ==================== 出售 ====================
 
     /// <summary>是否能出售当前选中项：装备槽上的物品不参与出售，避免误卖身上装备。</summary>
     public bool CanSellSelected()
     {
-        if (Model == null || currency == null || selectedIndex < 0)
+        if (currency == null || !selection.IsValid || selection.Area != SlotArea.Warehouse)
             return false;
 
-        if (selectedSection == LoadoutSection.Equipment)
-            return false;
-
-        if (selectedSection == LoadoutSection.Warehouse && ToBagIndex(selectedIndex) < 0)
-            return false;
-
-        return GetSelectedItem() != null;
+        return ItemAt(selection) != null;
     }
 
-    /// <summary>出售当前选中物品：扣物品、存档、到账。</summary>
+    /// <summary>出售当前选中物品：扣物品、到账。仓库变更由 GameSession 自动落盘。</summary>
     public void SellSelected()
     {
         if (!CanSellSelected())
             return;
 
-        var item = GetSelectedItem();
-        if (item == null)
+        var instance = ItemAt(selection);
+        if (instance == null || instance.Definition == null)
             return;
 
-        var removed = selectedSection == LoadoutSection.Warehouse
-            ? Model.TryRemoveFromBag(ToBagIndex(selectedIndex))
-            : Model.TryRemoveFromCarry(selectedIndex);
-
-        if (!removed)
+        if (!Loadout.TryRemoveFromWarehouse(selection.Index))
             return;
 
-        // 先扣物品再立即存档，再入账，保证两侧都持久化。
-        PlayerInventoryStore.Save(Model, holder != null ? holder.Database : null);
-        currency.Add(item.Value);
+        currency.Add(instance.Definition.Value);
 
         ClearSelection();
         Refresh();
     }
 
     // ==================== 内部 ====================
-
-    /// <summary>选中格子是否有效：仓库要看该页格号是否落在容量内，装备槽要看是否已启用。</summary>
-    private bool IsSelectable(LoadoutSection section, int index)
-    {
-        switch (section)
-        {
-            case LoadoutSection.Warehouse:
-                return ToBagIndex(index) >= 0;
-            case LoadoutSection.Carry:
-                return index >= 0 && index < Inventory.CarryCapacity;
-            case LoadoutSection.Equipment:
-                return Inventory.IsSlotUsable(SlotTypeAt(index));
-            default:
-                return false;
-        }
-    }
 
     /// <summary>画布比设计尺寸小时整体等比缩小，保证面板始终完整可见。</summary>
     private void UpdateFitScale()
@@ -397,23 +361,6 @@ public sealed class LoadoutPanelController : MonoBehaviour
 
         if (panelBody != null && animationRoutine == null)
             panelBody.localScale = Vector3.one * fitScale;
-    }
-
-    private void ResolveModel()
-    {
-        if (Model != null)
-            return;
-
-        var source = holder != null ? holder : FindObjectOfType<InventoryHolder>(true);
-        if (source == null)
-        {
-            Debug.LogError("场景中没有 InventoryHolder，装备配置面板将无法读取玩家库存。", this);
-            return;
-        }
-
-        holder = source;
-        Model = source.Model;
-        Model.Changed += Refresh;
     }
 
     private void BindButtons()
@@ -443,8 +390,8 @@ public sealed class LoadoutPanelController : MonoBehaviour
     private void BindSlots()
     {
         BindGroup(warehouseSlots, LoadoutSection.Warehouse);
-        BindGroup(carrySlots, LoadoutSection.Carry);
         BindGroup(equipmentSlots, LoadoutSection.Equipment);
+        BindGroup(carrySlots, LoadoutSection.Carry);
     }
 
     private void BindGroup(LoadoutSlotView[] slots, LoadoutSection section)
@@ -458,7 +405,7 @@ public sealed class LoadoutPanelController : MonoBehaviour
 
     private void ClearSelection()
     {
-        selectedIndex = -1;
+        selection = SlotRef.None;
     }
 
     private void Refresh()
@@ -466,13 +413,22 @@ public sealed class LoadoutPanelController : MonoBehaviour
         if (warehouseSlots != null)
         {
             for (var i = 0; i < warehouseSlots.Length; i++)
-                warehouseSlots[i]?.SetItem(Model?.GetBagItem(ToBagIndex(i)));
+            {
+                if (warehouseSlots[i] == null)
+                    continue;
+
+                // 仓库分页复用同一批格子：必须把真实索引推给 View，
+                // 否则它的 BuildSlotRef 仍指向上一页，拖拽 / 点击会串页。
+                var warehouseIndex = ToWarehouseIndex(i);
+                warehouseSlots[i].SetSlotIndex(warehouseIndex);
+                warehouseSlots[i].SetItem(warehouseIndex >= 0 ? Loadout.GetWarehouse(warehouseIndex) : null);
+            }
         }
 
         if (carrySlots != null)
         {
             for (var i = 0; i < carrySlots.Length; i++)
-                carrySlots[i]?.SetItem(Model?.GetCarryItem(i));
+                carrySlots[i]?.SetItem(GameSession.Raid.GetCarry(i));
         }
 
         if (equipmentSlots != null)
@@ -482,56 +438,29 @@ public sealed class LoadoutPanelController : MonoBehaviour
                 if (slot == null)
                     continue;
 
-                slot.SetInteractable(Inventory.IsSlotUsable(slot.EquipmentSlot));
-                slot.SetItem(Model?.GetEquippedItem(slot.EquipmentSlot));
+                slot.SetInteractable(EquipmentSlots.IsUsable(slot.EquipmentSlot));
+                slot.SetItem(Loadout.Equipment.Get(slot.EquipmentSlot));
             }
         }
 
         RefreshCounts();
         RefreshPager();
+
+        // 选中的物品可能已被拖走 / 卖掉，刷新后要重新校验。
+        if (selection.IsValid && ItemAt(selection) == null)
+            selection = SlotRef.None;
+
         RefreshDetail();
-
-        if (!IsSelectable(selectedSection, selectedIndex))
-            ClearSelection();
-
         RefreshSelectionVisual();
     }
 
     private void RefreshCounts()
     {
         if (warehouseCountText != null)
-            warehouseCountText.text = Model == null
-                ? "—"
-                : CountWarehouse() + " / " + Inventory.BagCapacity;
+            warehouseCountText.text = Loadout.WarehouseCount() + " / " + PlayerLoadout.WarehouseCapacity;
 
         if (carryCountText != null)
-            carryCountText.text = Model == null
-                ? "—"
-                : CountCarry() + " / " + Inventory.CarryCapacity;
-    }
-
-    private int CountWarehouse()
-    {
-        var count = 0;
-        for (var i = 0; i < Inventory.BagCapacity; i++)
-        {
-            if (Model.GetBagItem(i) != null)
-                count++;
-        }
-
-        return count;
-    }
-
-    private int CountCarry()
-    {
-        var count = 0;
-        for (var i = 0; i < Inventory.CarryCapacity; i++)
-        {
-            if (Model.GetCarryItem(i) != null)
-                count++;
-        }
-
-        return count;
+            carryCountText.text = GameSession.Raid.CarryCount() + " / " + RaidBag.CarryCapacity;
     }
 
     private void RefreshPager()
@@ -549,8 +478,8 @@ public sealed class LoadoutPanelController : MonoBehaviour
     private void RefreshSelectionVisual()
     {
         ApplySelection(warehouseSlots, LoadoutSection.Warehouse);
-        ApplySelection(carrySlots, LoadoutSection.Carry);
         ApplySelection(equipmentSlots, LoadoutSection.Equipment);
+        ApplySelection(carrySlots, LoadoutSection.Carry);
     }
 
     private void ApplySelection(LoadoutSlotView[] slots, LoadoutSection section)
@@ -559,26 +488,42 @@ public sealed class LoadoutPanelController : MonoBehaviour
             return;
 
         for (var i = 0; i < slots.Length; i++)
-            slots[i]?.SetSelected(section == selectedSection && i == selectedIndex);
+        {
+            if (slots[i] == null)
+                continue;
+
+            // 仓库格用 View 上的真实索引比较（页内格号 i 与 selection.Index 语义不同，
+            // 直接比 i 会在翻页后把选中态画到错误的格子上）。
+            var isSelected = selection.IsValid
+                && SelectedSection == section
+                && (section == LoadoutSection.Equipment
+                    ? slots[i].EquipmentSlot == selection.EquipmentSlot
+                    : slots[i].Index == selection.Index);
+
+            slots[i].SetSelected(isSelected);
+        }
     }
 
     private void RefreshDetail()
     {
-        var item = GetSelectedItem();
-        var hasItem = item != null;
+        var instance = ItemAt(selection);
+        var definition = instance != null ? instance.Definition : null;
+        var hasItem = definition != null;
 
         if (detailIcon != null)
         {
-            var hasIcon = hasItem && item.Icon != null;
-            detailIcon.sprite = hasIcon ? item.Icon : null;
+            var hasIcon = hasItem && definition.Icon != null;
+            detailIcon.sprite = hasIcon ? definition.Icon : null;
             detailIcon.enabled = hasIcon;
         }
 
         if (detailName != null)
-            detailName.text = hasItem ? item.DisplayName : emptyNameText;
+            detailName.text = hasItem ? definition.DisplayName : emptyNameText;
 
         if (detailMeta != null)
-            detailMeta.text = hasItem ? FormatMeta(item) : emptyMetaText;
+            detailMeta.text = hasItem
+                ? ItemMetaFormatter.Format(definition, instance.CurrentDurability)
+                : emptyMetaText;
 
         RefreshSellButton();
     }
@@ -595,50 +540,19 @@ public sealed class LoadoutPanelController : MonoBehaviour
             sellButtonImage.color = canSell ? Color.white : sellDisabledColor;
     }
 
-    /// <summary>详情区的第二行：装备槽类型 + 品质 + 价值。</summary>
-    private static string FormatMeta(ItemDefinition item)
+    private ItemInstance ItemAt(SlotRef slot)
     {
-        var rarity = UiTokens.RarityName(item.Rarity);
-        var slot = FormatSlotType(item.EquipSlotType);
-        return string.IsNullOrEmpty(slot)
-            ? rarity + "   ·   价值 " + item.Value
-            : slot + "   ·   " + rarity + "   ·   价值 " + item.Value;
-    }
-
-    private static string FormatSlotType(EquipmentSlotType slot)
-    {
-        switch (slot)
-        {
-            case EquipmentSlotType.MeleeWeapon:
-                return "近战武器";
-            case EquipmentSlotType.RangedWeapon:
-                return "远程武器";
-            case EquipmentSlotType.Helmet:
-                return "头盔";
-            case EquipmentSlotType.BodyArmor:
-                return "护甲";
-            case EquipmentSlotType.Boots:
-                return "战靴";
-            default:
-                return string.Empty;
-        }
-    }
-
-    private ItemDefinition GetSelectedItem()
-    {
-        if (Model == null || selectedIndex < 0)
+        if (!slot.IsValid)
             return null;
 
-        switch (selectedSection)
+        switch (slot.Area)
         {
-            case LoadoutSection.Warehouse:
-                return Model.GetBagItem(ToBagIndex(selectedIndex));
-            case LoadoutSection.Carry:
-                return Model.GetCarryItem(selectedIndex);
-            case LoadoutSection.Equipment:
-                return Model.GetEquippedItem(SlotTypeAt(selectedIndex));
+            case SlotArea.Warehouse:
+                return Loadout.GetWarehouse(slot.Index);
+            case SlotArea.Carry:
+                return GameSession.Raid.GetCarry(slot.Index);
             default:
-                return null;
+                return Loadout.Equipment.Get(slot.EquipmentSlot);
         }
     }
 
@@ -651,13 +565,13 @@ public sealed class LoadoutPanelController : MonoBehaviour
     }
 
     /// <summary>页内格号换算为仓库真实索引；超出总容量的格子返回 -1。</summary>
-    private int ToBagIndex(int slotIndex)
+    private int ToWarehouseIndex(int slotIndex)
     {
         if (slotIndex < 0)
             return -1;
 
         var index = CurrentPage * PageSlotCount + slotIndex;
-        return index < Inventory.BagCapacity ? index : -1;
+        return index < PlayerLoadout.WarehouseCapacity ? index : -1;
     }
 
     private void PlayAnimation(bool open)

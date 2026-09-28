@@ -67,6 +67,11 @@ public sealed class DepartFlow : MonoBehaviour
         while (Time.realtimeSinceStartup - startedAt < minDisplaySeconds)
             yield return null;
 
+        // 出征：保留主菜单配好的携带清单，只清空上一局的战利品记录。
+        // 会话是进程内单例，局内场景拿到的是同一个对象，因此不存在「存档没落盘导致装备带不进去」。
+        GameSession.BeginRaid();
+        GameSession.Persist();
+
         // 激活后当前场景连同加载页一起被卸载，无需再还原按钮状态。
         operation.allowSceneActivation = true;
     }

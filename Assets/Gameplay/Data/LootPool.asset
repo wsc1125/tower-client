@@ -1,0 +1,82 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 3162985f69356304fb3bbdb08f14c011, type: 3}
+  m_Name: LootPool
+  m_EditorClassIdentifier: 
+  items:
+  - {fileID: 11400000, guid: 55a19d1df699d154ba400fb728324601, type: 2}
+  - {fileID: 11400000, guid: ffb6f41085ea731499b65d54aa3ad1c2, type: 2}
+  - {fileID: 11400000, guid: a58f1f40ffeaa6e4fa0ee94c029ffb5d, type: 2}
+  - {fileID: 11400000, guid: fa4f9f431b720b04bab7ae5a28afe0cd, type: 2}
+  - {fileID: 11400000, guid: 68c6dfd40350fb7408fa4acc53369dd6, type: 2}
+  - {fileID: 11400000, guid: e52dffa9e3c1c12488fd42a397f76c02, type: 2}
+  - {fileID: 11400000, guid: 2b4705cbd60b04143b39cfb0363b5f2b, type: 2}
+  - {fileID: 11400000, guid: 049ad2ef5cfe3e3408e9b14ac01bf06a, type: 2}
+  - {fileID: 11400000, guid: 76975fee86970b646932976eb7b842bc, type: 2}
+  - {fileID: 11400000, guid: addabd0c413931c43883c36c84ecec42, type: 2}
+  - {fileID: 11400000, guid: 5909e21acfa14ac4cbff30433e9a6539, type: 2}
+  - {fileID: 11400000, guid: a999126ece0441849a4ecb6bf2eda45f, type: 2}
+  - {fileID: 11400000, guid: 706aa7fbf5986714380ef86228ce69ee, type: 2}
+  - {fileID: 11400000, guid: e77ec0d72b37b5f49a84e756dc8f134f, type: 2}
+  - {fileID: 11400000, guid: 74ca5ce057d53004894c446e955875e1, type: 2}
+  - {fileID: 11400000, guid: 808a395b69a9bf44591ef8181d58ae64, type: 2}
+  rarityCurves:
+  - rarity: 0
+    points:
+    - floor: 1
+      chance: 0.55
+    - floor: 10
+      chance: 0.45
+    - floor: 20
+      chance: 0.35
+    - floor: 30
+      chance: 0.3
+  - rarity: 1
+    points:
+    - floor: 1
+      chance: 0.2
+    - floor: 10
+      chance: 0.28
+    - floor: 20
+      chance: 0.34
+    - floor: 30
+      chance: 0.38
+  - rarity: 2
+    points:
+    - floor: 1
+      chance: 0.06
+    - floor: 10
+      chance: 0.14
+    - floor: 20
+      chance: 0.22
+    - floor: 30
+      chance: 0.28
+  - rarity: 3
+    points:
+    - floor: 1
+      chance: 0.01
+    - floor: 10
+      chance: 0.05
+    - floor: 20
+      chance: 0.12
+    - floor: 30
+      chance: 0.18
+  - rarity: 4
+    points:
+    - floor: 1
+      chance: 0
+    - floor: 10
+      chance: 0.01
+    - floor: 20
+      chance: 0.03
+    - floor: 30
+      chance: 0.06

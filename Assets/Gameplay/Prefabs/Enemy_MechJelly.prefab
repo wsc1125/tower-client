@@ -151,7 +151,7 @@ Transform:
   m_GameObject: {fileID: 4760325831210661139}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: -0.4064516, z: 0}
+  m_LocalPosition: {x: 0, y: 0, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -284,8 +284,12 @@ MonoBehaviour:
   visual: {fileID: 4820304779250976869}
   muzzlePoint: {fileID: 2535172405825164735}
   laserPrefab: {fileID: 8055320326012583602, guid: 9592bf7ce39ca4a4d9cede65f70db588, type: 3}
+  summoner: {fileID: 0}
+  mortar: {fileID: 0}
+  melee: {fileID: 0}
   laserSpeed: 7
   attackCooldown: 1.5
+  recoverDuration: 0.5
   body: {fileID: 3561660159026952155}
   bodyCollider: {fileID: 7300099381153739101}
 --- !u!114 &6152247507380282836
@@ -301,6 +305,5 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   enemy: {fileID: 8934973809183235932}
-  lootTable: {fileID: 11400000, guid: 5bd7ab5ac357a1541bc52d9ef1dc1960, type: 2}
   dropPrefab: {fileID: 8539051744257114867, guid: 0cd59b7cb2b010e40a61e69996f0af08, type: 3}
   scatterRadius: 0.35

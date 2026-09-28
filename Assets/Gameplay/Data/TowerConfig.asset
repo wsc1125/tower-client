@@ -14,8 +14,9 @@ MonoBehaviour:
   m_EditorClassIdentifier: 
   healthGrowthPerFloor: 0.15
   damageGrowthPerFloor: 0.1
-  floorsPerExtraEnemy: 2
-  maxEnemiesPerFloor: 6
+  startingEnemiesPerFloor: 3
+  floorsPerExtraEnemy: 1
+  maxEnemiesPerFloor: 12
   retreatEveryFloors: 5
   enemyPool:
   - prefab: {fileID: 7530253324970591647, guid: 06d614c147c4f2e46a31ffae08a62706, type: 3}
@@ -26,14 +27,4 @@ MonoBehaviour:
     weight: 2
   - prefab: {fileID: 2133316156098121915, guid: 54d128a062b9edc448177182bec07abe, type: 3}
     weight: 1
-  lootTiers:
-  - fromFloor: 1
-    table: {fileID: 11400000, guid: 6b471a02a41de6d43adbf4471fde0259, type: 2}
-  - fromFloor: 5
-    table: {fileID: 11400000, guid: adaedc1b749ffba449d92f2054e8d001, type: 2}
-  - fromFloor: 10
-    table: {fileID: 11400000, guid: 42d0e6ce09e6aba4086d0d52e37a21e1, type: 2}
-  - fromFloor: 15
-    table: {fileID: 11400000, guid: 03a1becd60a7de5499a3c63611150932, type: 2}
-  - fromFloor: 20
-    table: {fileID: 11400000, guid: 7a198c3c90add574286ad7ab1a31148a, type: 2}
+  lootPool: {fileID: 11400000, guid: c1028d018a1b4034bacacf76c2396b25, type: 2}

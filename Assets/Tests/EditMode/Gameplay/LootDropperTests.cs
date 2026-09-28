@@ -47,7 +47,7 @@ public sealed class LootDropperTests
     }
 
     [Test]
-    public void HandleDied_SpawnsNothingWhenLootTableMissing()
+    public void HandleDied_SpawnsNothingWhenLootPoolMissing()
     {
         dropper.HandleDied();
 
@@ -57,7 +57,7 @@ public sealed class LootDropperTests
     [Test]
     public void HandleDied_SpawnsOneDropWhenChanceIsFull()
     {
-        WireTable(1f);
+        WirePool(1f);
 
         dropper.HandleDied();
 
@@ -67,7 +67,7 @@ public sealed class LootDropperTests
     [Test]
     public void HandleDied_SpawnsNothingWhenChanceIsZero()
     {
-        WireTable(0f);
+        WirePool(0f);
 
         dropper.HandleDied();
 
@@ -77,7 +77,7 @@ public sealed class LootDropperTests
     [Test]
     public void HandleDied_SpawnsWithinScatterRadius()
     {
-        WireTable(1f);
+        WirePool(1f);
 
         dropper.HandleDied();
 
@@ -89,20 +89,78 @@ public sealed class LootDropperTests
     [Test]
     public void HandleDied_InitializesSpawnedItem()
     {
-        WireTable(1f);
+        WirePool(1f);
 
         dropper.HandleDied();
 
-        Assert.That(FirstSpawned().Item, Is.SameAs(item));
+        // 掉落池掷出的是模板，落地时现场创建实例，因此断言「类型一致」而非同一引用。
+        var spawned = FirstSpawned();
+        Assert.That(spawned.Item, Is.Not.Null);
+        Assert.That(spawned.Definition, Is.SameAs(item));
     }
 
-    private void WireTable(float chance)
+    [Test]
+    public void Configure_StoresPoolAndClampsFloor()
     {
-        var table = ScriptableObject.CreateInstance<LootTable>();
-        table.Configure(new[] { new LootTable.Entry { item = item, dropChance = chance } });
-        var serialized = new SerializedObject(dropper);
-        serialized.FindProperty("lootTable").objectReferenceValue = table;
-        serialized.ApplyModifiedPropertiesWithoutUndo();
+        var pool = ScriptableObject.CreateInstance<LootPool>();
+
+        dropper.Configure(pool, 0);
+
+        Assert.That(dropper.LootPool, Is.SameAs(pool));
+        Assert.That(dropper.Floor, Is.EqualTo(1));
+
+        dropper.Configure(pool, 7);
+        Assert.That(dropper.Floor, Is.EqualTo(7));
+
+        Object.DestroyImmediate(pool);
+    }
+
+    [Test]
+    public void HandleDied_UsesInjectedFloorForChance()
+    {
+        // 概率曲线：第 1 层 0，第 10 层 1。低层不掉、高层必掉，验证层数确实参与掷点。
+        var pool = ScriptableObject.CreateInstance<LootPool>();
+        pool.Configure(
+            new[] { item },
+            new[]
+            {
+                new LootRarityCurve
+                {
+                    rarity = ItemRarity.Common,
+                    points = new[]
+                    {
+                        new LootRarityCurve.Point { floor = 1, chance = 0f },
+                        new LootRarityCurve.Point { floor = 10, chance = 1f },
+                    },
+                },
+            });
+
+        dropper.Configure(pool, 1);
+        dropper.HandleDied();
+        Assert.That(SpawnedCount(), Is.Zero);
+
+        dropper.Configure(pool, 10);
+        dropper.HandleDied();
+        Assert.That(SpawnedCount(), Is.EqualTo(1));
+
+        Object.DestroyImmediate(pool);
+    }
+
+    private void WirePool(float chance)
+    {
+        var pool = ScriptableObject.CreateInstance<LootPool>();
+        pool.Configure(
+            new[] { item },
+            new[]
+            {
+                new LootRarityCurve
+                {
+                    rarity = ItemRarity.Common,
+                    points = new[] { new LootRarityCurve.Point { floor = 1, chance = chance } },
+                },
+            });
+
+        dropper.Configure(pool, 1);
     }
 
     private static int SpawnedCount()

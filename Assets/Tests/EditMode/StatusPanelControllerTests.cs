@@ -21,7 +21,7 @@ public class StatusPanelControllerTests
     }
 
     [Test]
-    public void StatusPanelController_UpdatesFillAmounts()
+    public void StatusPanelController_UpdatesHealthFillAmount()
     {
         var prefab = AssetDatabase.LoadAssetAtPath<GameObject>(PrefabPath);
         var instance = Object.Instantiate(prefab);
@@ -30,13 +30,10 @@ public class StatusPanelControllerTests
         {
             var controller = instance.GetComponent<StatusPanelController>();
             var hpFill = instance.transform.Find("HpFill").GetComponent<Image>();
-            var mpFill = instance.transform.Find("MpFill").GetComponent<Image>();
 
             controller.SetHealth(50f, 100f);
-            controller.SetMana(25f, 100f);
 
             Assert.That(hpFill.fillAmount, Is.EqualTo(0.5f).Within(0.001f));
-            Assert.That(mpFill.fillAmount, Is.EqualTo(0.25f).Within(0.001f));
         }
         finally
         {

@@ -87,7 +87,7 @@ public static class GameSession
     }
 
     /// <summary>
-    /// 出征：清空上一局的携带与战利品。
+    /// 出征：保留主菜单配好的携带清单，只清空上一局的战利品记录。
     /// 装备槽不需要搬运 —— 局内外共用同一份 <see cref="PlayerLoadout.Equipment"/>。
     /// </summary>
     public static void BeginRaid()

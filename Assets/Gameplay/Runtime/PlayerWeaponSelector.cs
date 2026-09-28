@@ -1,27 +1,37 @@
-using System;
+﻿using System;
 using UnityEngine;
 
 /// <summary>
 /// 「当前使用的武器」的唯一来源：同一时间只有一把武器会显示，也只有它能攻击。
+/// 主手与副手在逻辑上完全等价 —— 武器可以装备在任意一个武器槽里，
+/// 这里只负责在「已装备的武器」之间切换，不关心它落在哪个槽。
 /// 当前武器只在两种情况下改变 —— 玩家点了「切换攻击」按钮，或当前武器被卸下后自动落到另一把。
 /// 这里只是本地状态，不涉及数值结算；将来接联机时把 <see cref="Toggle"/> 改成发请求即可。
 /// </summary>
 public sealed class PlayerWeaponSelector : MonoBehaviour
 {
-    private static readonly EquipmentSlotType[] WeaponSlots =
-    {
-        EquipmentSlotType.MeleeWeapon,
-        EquipmentSlotType.RangedWeapon,
-    };
-
-    [SerializeField] private InventoryHolder holder;
     [SerializeField] private AttackSwitchButton switchButton;
 
-    private Inventory subscribed;
     private EquipmentSlotType? activeSlot;
 
-    /// <summary>当前使用的武器槽位。首次访问时按「槽位顺序取第一把已装备的武器」解析。</summary>
-    public EquipmentSlotType ActiveSlot => activeSlot ??= ResolveInitialSlot();
+    /// <summary>
+    /// 当前使用的武器槽位。缓存值失效时（未装备 / 尚未解析）按「主手 → 副手」重新解析，
+    /// 否则首次访问发生在装备之前时会永久停在 None，表现为「装了枪但手上没有」。
+    /// </summary>
+    public EquipmentSlotType ActiveSlot
+    {
+        get
+        {
+            if (activeSlot.HasValue && IsEquipped(activeSlot.Value))
+                return activeSlot.Value;
+
+            var resolved = ResolveInitialSlot();
+            if (resolved != activeSlot)
+                activeSlot = resolved;
+
+            return resolved;
+        }
+    }
 
     /// <summary>当前武器发生变化时触发一次。</summary>
     public event Action Changed;
@@ -35,17 +45,16 @@ public sealed class PlayerWeaponSelector : MonoBehaviour
     public void Toggle()
     {
         var other = Other(ActiveSlot);
-        if (!IsEquipped(other))
+        if (other == EquipmentSlotType.None)
             return;
 
         SetActive(other);
     }
 
-    private static EquipmentSlotType Other(EquipmentSlotType slot)
+    /// <summary>另一把已装备武器所在的槽；没有则返回 <see cref="EquipmentSlotType.None"/>。</summary>
+    private EquipmentSlotType Other(EquipmentSlotType slot)
     {
-        return slot == EquipmentSlotType.MeleeWeapon
-            ? EquipmentSlotType.RangedWeapon
-            : EquipmentSlotType.MeleeWeapon;
+        return GameSession.Loadout.Equipment.OtherWeaponSlot(slot);
     }
 
     private void OnEnable()
@@ -53,7 +62,7 @@ public sealed class PlayerWeaponSelector : MonoBehaviour
         if (switchButton != null)
             switchButton.Clicked += Toggle;
 
-        Subscribe();
+        GameSession.RaidChanged += HandleRaidChanged;
     }
 
     private void OnDisable()
@@ -61,32 +70,30 @@ public sealed class PlayerWeaponSelector : MonoBehaviour
         if (switchButton != null)
             switchButton.Clicked -= Toggle;
 
-        Unsubscribe();
+        GameSession.RaidChanged -= HandleRaidChanged;
     }
 
-    /// <summary>按槽位顺序取第一把已装备的武器；两把都没装备时结果为远程槽（此时手上不会显示任何武器）。</summary>
+    /// <summary>按「主手 → 副手」顺序取第一把已装备的武器；两把都没装备时结果为 None（此时手上不会显示任何武器）。</summary>
     private EquipmentSlotType ResolveInitialSlot()
     {
-        foreach (var slot in WeaponSlots)
-        {
-            if (IsEquipped(slot))
-                return slot;
-        }
-
-        return EquipmentSlotType.RangedWeapon;
+        return GameSession.Loadout.Equipment.FirstWeaponSlot();
     }
 
     /// <summary>
     /// 装备另一把武器不改变当前武器（只有点按钮才切）；
     /// 但当前武器被卸下时必须自动落到另一把，否则会出现「手上什么都没有、攻击键没反应」。
+    /// 尚未解析过当前武器时不做任何事 —— 否则「先装副手、再装主手」会被这里抢先解析成主手。
     /// </summary>
-    private void HandleInventoryChanged()
+    private void HandleRaidChanged()
     {
-        if (IsEquipped(ActiveSlot))
+        if (!activeSlot.HasValue)
             return;
 
-        var other = Other(ActiveSlot);
-        if (!IsEquipped(other))
+        if (IsEquipped(activeSlot.Value))
+            return;
+
+        var other = Other(activeSlot.Value);
+        if (other == EquipmentSlotType.None)
             return;
 
         SetActive(other);
@@ -100,26 +107,6 @@ public sealed class PlayerWeaponSelector : MonoBehaviour
 
     private bool IsEquipped(EquipmentSlotType slot)
     {
-        return holder != null
-            && Inventory.IsSlotUsable(slot)
-            && holder.Model.GetEquippedItem(slot) != null;
-    }
-
-    private void Subscribe()
-    {
-        if (subscribed != null || holder == null)
-            return;
-
-        subscribed = holder.Model;
-        subscribed.Changed += HandleInventoryChanged;
-    }
-
-    private void Unsubscribe()
-    {
-        if (subscribed == null)
-            return;
-
-        subscribed.Changed -= HandleInventoryChanged;
-        subscribed = null;
+        return slot != EquipmentSlotType.None && GameSession.Loadout.Equipment.Get(slot) != null;
     }
 }

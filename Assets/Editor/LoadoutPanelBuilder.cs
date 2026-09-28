@@ -73,11 +73,11 @@ public static class LoadoutPanelBuilder
     private static readonly Vector2 CloseCenter = new Vector2(1842f, 82f);
     private const float CloseHitSize = 104f;
 
-    /// <summary>装备槽从左到右的顺序：先武器（近战 / 远程），再防具（头盔 / 护甲 / 靴）。</summary>
+    /// <summary>装备槽从左到右的顺序：先武器（主手 / 副手），再防具（头盔 / 护甲 / 靴）。</summary>
     private static readonly EquipmentSlotType[] EquipOrder =
     {
-        EquipmentSlotType.MeleeWeapon,
-        EquipmentSlotType.RangedWeapon,
+        EquipmentSlotType.MainHand,
+        EquipmentSlotType.OffHand,
         EquipmentSlotType.Helmet,
         EquipmentSlotType.BodyArmor,
         EquipmentSlotType.Boots,
@@ -288,16 +288,6 @@ public static class LoadoutPanelBuilder
                 context.SetParent(contents.transform, false);
             }
 
-            var holder = context.GetComponent<InventoryHolder>();
-            if (holder == null)
-                holder = context.gameObject.AddComponent<InventoryHolder>();
-
-            var holderSerialized = new SerializedObject(holder);
-            holderSerialized.FindProperty("loadFromSave").boolValue = true;
-            holderSerialized.FindProperty("database").objectReferenceValue =
-                AssetDatabase.LoadAssetAtPath<ItemDatabase>(ItemDatabasePath);
-            holderSerialized.ApplyModifiedPropertiesWithoutUndo();
-
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(panelPrefab, contents.transform);
             instance.transform.SetAsLastSibling();
 
@@ -307,7 +297,8 @@ public static class LoadoutPanelBuilder
                 Debug.LogWarning("[LoadoutPanelBuilder] MainMenu 中未找到 PlayerCurrency，出售将无法到账。");
 
             var controllerSerialized = new SerializedObject(controller);
-            controllerSerialized.FindProperty("holder").objectReferenceValue = holder;
+            controllerSerialized.FindProperty("database").objectReferenceValue =
+                AssetDatabase.LoadAssetAtPath<ItemDatabase>(ItemDatabasePath);
             controllerSerialized.FindProperty("currency").objectReferenceValue = currency;
             controllerSerialized.FindProperty("designSize").vector2Value = BodySize;
             controllerSerialized.ApplyModifiedPropertiesWithoutUndo();
@@ -407,9 +398,12 @@ public static class LoadoutPanelBuilder
         frameImage.color = Color.white;
         frameImage.raycastTarget = true;
 
-        // ---- 品质底板：外层品质色描边 + 内层深底（仅在格内有物品时显示） ----
+        // ---- 品质底板：外层圆角品质色描边 + 内层深底（仅在格内有物品时显示） ----
+        // 描边层用 9-slice 圆角框素材，圆角半径与描边宽度不随格子尺寸变形。
         var qualityPlate = CreateCentered("QualityPlate", rect, Vector2.one * (size * QualityPlateRatio));
         var qualityBorderImage = qualityPlate.gameObject.AddComponent<Image>();
+        qualityBorderImage.sprite = LoadSprite(UiTokens.RarityPlateSpritePath);
+        qualityBorderImage.type = Image.Type.Sliced;
         qualityBorderImage.color = Color.white;
         qualityBorderImage.raycastTarget = false;
 

@@ -7,6 +7,8 @@ public enum EnemyState
     Chase,
     Attack,
     Retreat,
+    /// <summary>攻击后的喘息：原地不动、不攻击，给玩家拉开距离的窗口。</summary>
+    Recover,
     Dead,
 }
 
@@ -34,6 +36,9 @@ public sealed class EnemyHealth
 [RequireComponent(typeof(Rigidbody2D))]
 public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
 {
+    /// <summary>巡逻路径的最小半宽。两个巡逻点重合会让到达判定每帧抖动。</summary>
+    private const float MinPatrolHalfWidth = 0.25f;
+
     [Header("目标")]
     [SerializeField] private Transform player;
     [SerializeField] private Vector2 patrolPointA = new(-2f, 0f);
@@ -64,8 +69,15 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
     [SerializeField] private EnemyLaserProjectile2D laserPrefab;
     [SerializeField] private SpawnerSummoner2D summoner;
     [SerializeField] private ArtilleryMortar2D mortar;
+    [SerializeField] private MeleeAttacker2D melee;
     [SerializeField] private float laserSpeed = 7f;
     [SerializeField] private float attackCooldown = 1.5f;
+
+    /// <summary>
+    /// 攻击动画播完后的喘息时长：期间原地不动、不攻击，给玩家拉开距离的窗口。
+    /// 0 表示不进入喘息（保持旧行为）。
+    /// </summary>
+    [SerializeField] private float recoverDuration = 0.6f;
 
     /// <summary>激光伤害系数，由 EnemyStatScaler 按层数写入。1 表示不缩放。</summary>
     private float laserDamageMultiplier = 1f;
@@ -77,11 +89,18 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
     private EnemyState state = EnemyState.Patrol;
     private bool movingToB = true;
     private float cooldownRemaining;
+    private float recoverRemaining;
     private Vector2 movementVelocity;
 
     public EnemyState State => state;
     public bool IsDead => health != null && health.IsDead;
     public float CurrentHealth => health != null ? health.Current : maximumHealth;
+
+    /// <summary>巡逻点 A（世界坐标）。</summary>
+    public Vector2 PatrolPointA => patrolPointA;
+
+    /// <summary>巡逻点 B（世界坐标）。</summary>
+    public Vector2 PatrolPointB => patrolPointB;
 
     /// 血量归零的那一刻触发一次；已死亡后再次受伤不会重复触发。
     public event Action Died;
@@ -127,6 +146,8 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
                 return towardPlayer.normalized;
             case EnemyState.Retreat:
                 return -towardPlayer.normalized;
+            case EnemyState.Recover:
+                return Vector2.zero;
             default:
                 return Vector2.zero;
         }
@@ -165,6 +186,28 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
             return;
 
         laserDamageMultiplier = multiplier;
+    }
+
+    /// <summary>
+    /// 直接指定两个巡逻点（世界坐标）。
+    /// 敌人 prefab 里的巡逻点是写死的世界坐标，只适合手工摆放在固定位置的场景；
+    /// 运行时生成的敌人必须由生成方按出生点重新指定，否则会朝固定坐标走、穿过房间甚至撞墙。
+    /// </summary>
+    public void SetPatrolPoints(Vector2 pointA, Vector2 pointB)
+    {
+        patrolPointA = pointA;
+        patrolPointB = pointB;
+    }
+
+    /// <summary>
+    /// 以 <paramref name="origin"/> 为中心、<paramref name="radius"/> 为半宽，设置一段水平巡逻路径。
+    /// 半径会被钳制到最小值，保证两个巡逻点不重合（重合会让到达判定每帧抖动）。
+    /// </summary>
+    public void SetPatrolAround(Vector2 origin, float radius)
+    {
+        var half = Mathf.Max(MinPatrolHalfWidth, Mathf.Abs(radius));
+        patrolPointA = new Vector2(origin.x - half, origin.y);
+        patrolPointB = new Vector2(origin.x + half, origin.y);
     }
 
     public void TakeDamage(float amount)
@@ -215,6 +258,7 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
     private void FixedUpdate()
     {
         cooldownRemaining = Mathf.Max(0f, cooldownRemaining - Time.fixedDeltaTime);
+        recoverRemaining = Mathf.Max(0f, recoverRemaining - Time.fixedDeltaTime);
 
         var hasPlayer = player != null;
         var toPlayer = hasPlayer ? (Vector2)(player.position - transform.position) : Vector2.zero;
@@ -239,6 +283,18 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
                 visual != null && visual.AttackFinished))
         {
             resolvedState = EnemyState.Attack;
+        }
+        else if (state == EnemyState.Attack && visual != null && visual.AttackFinished)
+        {
+            // 攻击动画刚播完：进入喘息，原地不动，给玩家拉开距离的窗口。
+            recoverRemaining = Mathf.Max(0f, recoverDuration);
+            cooldownRemaining = attackCooldown;
+            resolvedState = recoverRemaining > 0f ? EnemyState.Recover : EnemyState.Chase;
+        }
+        else if (state == EnemyState.Recover && recoverRemaining > 0f)
+        {
+            // 喘息期间不受侦测/攻击范围影响，保持原地不动。
+            resolvedState = EnemyState.Recover;
         }
         else if (resolvedState == EnemyState.Attack && cooldownRemaining > 0f)
         {
@@ -271,12 +327,11 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
                 summoner.Summon();
             else if (mortar != null)
                 mortar.Fire(player != null ? (Vector2)player.position : (Vector2)transform.position);
+            else if (melee != null)
+                melee.Attack();
             else
                 FireLaser(toPlayer);
         }
-
-        if (state == EnemyState.Attack && visual.AttackFinished)
-            cooldownRemaining = attackCooldown;
     }
 
     private void FireLaser(Vector2 toPlayer)
@@ -300,6 +355,8 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
                 return chaseSpeed;
             case EnemyState.Retreat:
                 return retreatSpeed;
+            case EnemyState.Recover:
+                return 0f;
             default:
                 return 0f;
         }

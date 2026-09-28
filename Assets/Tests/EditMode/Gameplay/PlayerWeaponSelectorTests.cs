@@ -1,24 +1,21 @@
-using NUnit.Framework;
+﻿using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UI;
 
 public sealed class PlayerWeaponSelectorTests
 {
-    private GameObject contextRoot;
     private GameObject selectorRoot;
     private GameObject switchRoot;
-    private InventoryHolder holder;
     private PlayerWeaponSelector selector;
     private AttackSwitchButton switchButton;
-    private ItemDefinition sword;
-    private ItemDefinition rifle;
+    private ItemInstance sword;
+    private ItemInstance rifle;
 
     [SetUp]
     public void SetUp()
     {
-        contextRoot = new GameObject("PlayerContext");
-        holder = contextRoot.AddComponent<InventoryHolder>();
+        GameSession.ResetForTests();
 
         switchRoot = new GameObject("AttackSwitchButton");
         switchButton = switchRoot.AddComponent<AttackSwitchButton>();
@@ -26,12 +23,11 @@ public sealed class PlayerWeaponSelectorTests
 
         selectorRoot = new GameObject("Selector");
         selector = selectorRoot.AddComponent<PlayerWeaponSelector>();
-        Wire(selector, "holder", holder);
         Wire(selector, "switchButton", switchButton);
         EditModeLifecycle.Invoke(selector, "OnEnable");
 
-        sword = ItemDefinitionFactory.Create(null, null, 0.4f, EquipmentSlotType.MeleeWeapon);
-        rifle = ItemDefinitionFactory.Create(null, null, 0.4f, EquipmentSlotType.RangedWeapon);
+        sword = ItemInstance.Create(ItemDefinitionFactory.Create(null, null, 0.4f, EquipmentSlotType.MainHand));
+        rifle = ItemInstance.Create(ItemDefinitionFactory.Create(null, null, 0.4f, EquipmentSlotType.OffHand));
     }
 
     [TearDown]
@@ -39,28 +35,28 @@ public sealed class PlayerWeaponSelectorTests
     {
         Object.DestroyImmediate(selectorRoot);
         Object.DestroyImmediate(switchRoot);
-        Object.DestroyImmediate(contextRoot);
-        Object.DestroyImmediate(sword);
-        Object.DestroyImmediate(rifle);
+        Object.DestroyImmediate(sword.Definition);
+        Object.DestroyImmediate(rifle.Definition);
+        GameSession.ResetForTests();
     }
 
     [Test]
-    public void ActiveSlot_IsRanged_WhenOnlyRifleEquipped()
+    public void ActiveSlot_IsOffHand_WhenOnlyOffHandWeaponEquipped()
     {
-        Equip(rifle);
+        EquipTo(rifle, EquipmentSlotType.OffHand);
 
-        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.RangedWeapon));
+        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.OffHand));
     }
 
     [Test]
-    public void ActiveSlot_IsMelee_WhenBothWeaponsEquipped()
+    public void ActiveSlot_IsMainHand_WhenBothWeaponsEquipped()
     {
         Equip(sword);
         Equip(rifle);
 
-        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.MeleeWeapon));
-        Assert.That(selector.IsActive(EquipmentSlotType.MeleeWeapon), Is.True);
-        Assert.That(selector.IsActive(EquipmentSlotType.RangedWeapon), Is.False);
+        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.MainHand));
+        Assert.That(selector.IsActive(EquipmentSlotType.MainHand), Is.True);
+        Assert.That(selector.IsActive(EquipmentSlotType.OffHand), Is.False);
     }
 
     [Test]
@@ -71,31 +67,33 @@ public sealed class PlayerWeaponSelectorTests
 
         selector.Toggle();
 
-        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.RangedWeapon));
+        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.OffHand));
 
         selector.Toggle();
 
-        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.MeleeWeapon));
+        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.MainHand));
     }
 
     [Test]
     public void Toggle_KeepsCurrentWeapon_WhenOtherSlotIsEmpty()
     {
-        Equip(rifle);
+        EquipTo(rifle, EquipmentSlotType.OffHand);
 
         selector.Toggle();
 
-        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.RangedWeapon));
+        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.OffHand));
     }
 
     [Test]
     public void EquippingAnotherWeapon_KeepsCurrentWeapon()
     {
-        Equip(rifle);
+        EquipTo(rifle, EquipmentSlotType.OffHand);
+        // 先确立当前武器，再装第二把 —— 只有「已确立」的当前武器才谈得上不被改变。
+        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.OffHand));
 
         Equip(sword);
 
-        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.RangedWeapon));
+        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.OffHand));
     }
 
     [Test]
@@ -103,11 +101,12 @@ public sealed class PlayerWeaponSelectorTests
     {
         Equip(sword);
         Equip(rifle);
-        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.MeleeWeapon));
+        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.MainHand));
 
-        holder.Model.TryUnequipToBag(EquipmentSlotType.MeleeWeapon, 19);
+        GameSession.Loadout.Equipment.Set(EquipmentSlotType.MainHand, null);
+        GameSession.Raid.NotifyChanged();
 
-        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.RangedWeapon));
+        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.OffHand));
     }
 
     [Test]
@@ -118,7 +117,7 @@ public sealed class PlayerWeaponSelectorTests
 
         switchButton.GetComponent<Button>().onClick.Invoke();
 
-        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.RangedWeapon));
+        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.OffHand));
     }
 
     [Test]
@@ -135,18 +134,25 @@ public sealed class PlayerWeaponSelectorTests
         Assert.That(fired, Is.EqualTo(2));
     }
 
-    private void Equip(ItemDefinition item)
+    /// <summary>把武器装到「主手优先」的第一个空武器槽，模拟玩家在局内装备。</summary>
+    private void Equip(ItemInstance item)
     {
-        holder.Model.TryAdd(item);
-
-        for (var i = 0; i < Inventory.BagCapacity; i++)
+        foreach (var slot in EquipmentSlots.WeaponSlots)
         {
-            if (holder.Model.GetBagItem(i) != item)
-                continue;
-
-            holder.Model.TryEquipFromBag(i, item.EquipSlotType);
-            return;
+            if (EquipTo(item, slot))
+                return;
         }
+    }
+
+    /// <summary>把武器装到指定武器槽；槽已占用时返回 false。</summary>
+    private static bool EquipTo(ItemInstance item, EquipmentSlotType slot)
+    {
+        if (GameSession.Loadout.Equipment.Get(slot) != null)
+            return false;
+
+        GameSession.Loadout.Equipment.Set(slot, item);
+        GameSession.Raid.NotifyChanged();
+        return true;
     }
 
     private static void Wire(Object target, string field, Object value)

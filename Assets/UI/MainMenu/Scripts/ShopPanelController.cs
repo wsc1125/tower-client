@@ -6,8 +6,8 @@ using UnityEngine.UI;
 
 /// <summary>
 /// 主界面「商店」面板：以商品卡片网格展示可售的武器与护甲，底部为选中商品的详情与购买按钮。
-/// 目录来自 <see cref="InventoryHolder.Database"/> 中所有可装备物品（排除消耗品）；
-/// 购买成功后物品进入背包并扣除星空币。所有美术素材按原图直接使用，不做染色。
+/// 目录来自 <see cref="ItemDatabase"/> 中所有可装备物品（排除消耗品）；
+/// 购买成功后物品进入仓库并扣除星空币。所有美术素材按原图直接使用，不做染色。
 /// </summary>
 public sealed class ShopPanelController : MonoBehaviour
 {
@@ -31,7 +31,8 @@ public sealed class ShopPanelController : MonoBehaviour
     [SerializeField] private string emptyPriceText = "";
 
     [Header("数据")]
-    [SerializeField] private InventoryHolder holder;
+    [Tooltip("物品登记表。商店目录与存档还原都依赖它。")]
+    [SerializeField] private ItemDatabase database;
     [SerializeField] private PlayerCurrency currency;
 
     [Header("动画")]
@@ -49,8 +50,8 @@ public sealed class ShopPanelController : MonoBehaviour
     private int selectedIndex = -1;
     private List<ItemDefinition> catalog;
 
-    /// <summary>当前读取的玩家库存；未接上 <see cref="InventoryHolder"/> 时为 null。</summary>
-    public Inventory Model { get; private set; }
+    /// <summary>当前读取的局外资产。</summary>
+    public PlayerLoadout Loadout => GameSession.Loadout;
 
     public bool IsOpen => modalRoot != null && modalRoot.activeSelf;
 
@@ -58,7 +59,7 @@ public sealed class ShopPanelController : MonoBehaviour
 
     private void Awake()
     {
-        ResolveModel();
+        GameSession.EnsureInitialized(database);
         LoadCatalog();
         BindSlots();
         BindButtons();
@@ -66,6 +67,8 @@ public sealed class ShopPanelController : MonoBehaviour
 
         if (currency != null)
             currency.Changed += OnCurrencyChanged;
+
+        GameSession.LoadoutChanged += Refresh;
 
         // 面板默认隐藏：即使 prefab 里忘了关，也在首帧前收起来。
         if (modalRoot != null)
@@ -82,8 +85,7 @@ public sealed class ShopPanelController : MonoBehaviour
 
     private void OnDestroy()
     {
-        if (Model != null)
-            Model.Changed -= Refresh;
+        GameSession.LoadoutChanged -= Refresh;
 
         if (currency != null)
             currency.Changed -= OnCurrencyChanged;
@@ -164,10 +166,10 @@ public sealed class ShopPanelController : MonoBehaviour
         ShowDetail(GetCatalogItem(index));
     }
 
-    /// <summary>购买当前选中的商品：余额充足且背包有空位时扣款并入库；否则不生效。</summary>
+    /// <summary>购买当前选中的商品：余额充足且仓库有空位时扣款并入库；否则不生效。</summary>
     public void BuySelected()
     {
-        if (selectedIndex < 0 || Model == null)
+        if (selectedIndex < 0)
             return;
 
         var item = GetCatalogItem(selectedIndex);
@@ -180,35 +182,17 @@ public sealed class ShopPanelController : MonoBehaviour
             return;
         }
 
-        // 纯逻辑校验：余额不足 / 背包满 / 未定价都会在此失败。
-        if (!ShopService.TryPurchase(item, Model, currency.Balance, out var remaining))
+        // 纯逻辑校验：余额不足 / 仓库满 / 未定价都会在此失败。
+        if (!ShopService.TryPurchase(item, GameSession.Loadout, currency.Balance, out var remaining))
             return;
 
-        // 提交余额变化（差额即花费）并落盘库存。
+        // 提交余额变化（差额即花费）。仓库变更已由 GameSession 自动落盘。
         currency.TrySpend(currency.Balance - remaining);
-        PlayerInventoryStore.Save(Model, holder != null ? holder.Database : null);
-    }
-
-    private void ResolveModel()
-    {
-        if (Model != null)
-            return;
-
-        var source = holder != null ? holder : FindObjectOfType<InventoryHolder>(true);
-        if (source == null)
-        {
-            Debug.LogError("场景中没有 InventoryHolder，商店将无法读取玩家库存。", this);
-            return;
-        }
-
-        holder = source;
-        Model = source.Model;
-        Model.Changed += Refresh;
     }
 
     private void LoadCatalog()
     {
-        catalog = ShopService.GetCatalog(holder != null ? holder.Database : null);
+        catalog = ShopService.GetCatalog(database);
     }
 
     private ItemDefinition GetCatalogItem(int index)

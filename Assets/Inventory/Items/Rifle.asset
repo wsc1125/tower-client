@@ -20,3 +20,16 @@ MonoBehaviour:
   value: 120
   buyPrice: 240
   worldSize: 0.42
+  damage: 10
+  shotsPerSecond: 6
+  bulletSpeed: 14
+  projectilesPerShot: 1
+  spreadAngle: 0
+  bulletSprite: {fileID: 21300000, guid: f289f6734d5d1dd48972600e314fe794, type: 3}
+  flashFrames:
+  - {fileID: 21300000, guid: 329bf2c657229fe488efae153f936cba, type: 3}
+  - {fileID: 21300000, guid: 1230ea2cff6217e4caf13c83272530be, type: 3}
+  - {fileID: 21300000, guid: cf296ce4fe0635d4d842ff37850628ad, type: 3}
+  impactSprite: {fileID: 21300000, guid: f81d999aff4cd314f89e9160d0cebf24, type: 3}
+  damageReduction: 0
+  durability: 0

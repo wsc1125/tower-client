@@ -1,0 +1,31 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 48f1b289f06becb40b4d01230f97a0da, type: 3}
+  m_Name: Pierce
+  m_EditorClassIdentifier: 
+  displayName: "\u7A7F\u900F\u80FD\u91CF\u6B65\u67AA"
+  icon: {fileID: 21300000, guid: c7622207c1b7e7d4aaf07e3af83850f5, type: 3}
+  worldSprite: {fileID: 21300000, guid: c7622207c1b7e7d4aaf07e3af83850f5, type: 3}
+  equipSlotType: 2
+  rarity: 3
+  value: 210
+  buyPrice: 420
+  worldSize: 0.72
+  damage: 14
+  shotsPerSecond: 4
+  bulletSpeed: 20
+  bulletSprite: {fileID: 21300000, guid: 88820b0c8bb338f479504058be49ecbb, type: 3}
+  flashFrames:
+  - {fileID: 21300000, guid: 33c7925d337ff664183fb3ef6331c05d, type: 3}
+  - {fileID: 21300000, guid: 942f5e71645fdb142816c72b43e0ab08, type: 3}
+  - {fileID: 21300000, guid: c59728c5939de3a4da9834d35a039339, type: 3}
+  impactSprite: {fileID: 21300000, guid: 7a07974ac496bc148b62b9595c8e55f6, type: 3}

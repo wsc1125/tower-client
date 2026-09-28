@@ -1,4 +1,4 @@
-using System.Collections.Generic;
+﻿using System.Collections.Generic;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -14,14 +14,14 @@ public sealed class WeaponMountSlotTests
     private Texture2D texture;
     private Sprite sprite;
 
-    private InventoryHolder holder;
     private PlayerWeaponSelector selector;
-    private ItemDefinition sword;
-    private ItemDefinition rifle;
+    private ItemInstance sword;
+    private ItemInstance rifle;
 
     [SetUp]
     public void SetUp()
     {
+        GameSession.ResetForTests();
         texture = new Texture2D(4, 4);
         sprite = Sprite.Create(texture, new Rect(0f, 0f, 4f, 4f), new Vector2(0.5f, 0.5f));
 
@@ -45,8 +45,12 @@ public sealed class WeaponMountSlotTests
 
         spawned.Clear();
 
-        Object.DestroyImmediate(sword);
-        Object.DestroyImmediate(rifle);
+        if (sword != null)
+            Object.DestroyImmediate(sword.Definition);
+        if (rifle != null)
+            Object.DestroyImmediate(rifle.Definition);
+
+        GameSession.ResetForTests();
     }
 
     [Test]
@@ -87,47 +91,65 @@ public sealed class WeaponMountSlotTests
     public void Refresh_HidesWeapon_WhenAnotherSlotIsSelected()
     {
         EquipBothWeapons();
-        var rangedRenderer = CreateMount(EquipmentSlotType.RangedWeapon);
+        var offHandRenderer = CreateMount(EquipmentSlotType.OffHand);
 
-        // 两把都装备时当前武器是近战，远程那只手不应该显示枪。
-        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.MeleeWeapon));
-        Assert.That(rangedRenderer.enabled, Is.False);
+        // 两把都装备时当前武器是主手，副手那只手不应该显示武器。
+        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.MainHand));
+        Assert.That(offHandRenderer.enabled, Is.False);
     }
 
     [Test]
     public void Refresh_ShowsWeapon_OnSelectedSlotOnly()
     {
         EquipBothWeapons();
-        var meleeRenderer = CreateMount(EquipmentSlotType.MeleeWeapon);
-        var rangedRenderer = CreateMount(EquipmentSlotType.RangedWeapon);
+        var mainHandRenderer = CreateMount(EquipmentSlotType.MainHand);
+        var offHandRenderer = CreateMount(EquipmentSlotType.OffHand);
 
-        Assert.That(meleeRenderer.enabled, Is.True);
-        Assert.That(meleeRenderer.sprite, Is.Not.Null);
-        Assert.That(rangedRenderer.enabled, Is.False);
+        Assert.That(mainHandRenderer.enabled, Is.True);
+        Assert.That(mainHandRenderer.sprite, Is.Not.Null);
+        Assert.That(offHandRenderer.enabled, Is.False);
     }
 
     [Test]
     public void SwitchingWeapon_SwapsWhichMountShowsItsWeapon()
     {
         EquipBothWeapons();
-        var meleeRenderer = CreateMount(EquipmentSlotType.MeleeWeapon);
-        var rangedRenderer = CreateMount(EquipmentSlotType.RangedWeapon);
+        var mainHandRenderer = CreateMount(EquipmentSlotType.MainHand);
+        var offHandRenderer = CreateMount(EquipmentSlotType.OffHand);
 
         selector.Toggle();
 
-        Assert.That(meleeRenderer.enabled, Is.False);
-        Assert.That(rangedRenderer.enabled, Is.True);
+        Assert.That(mainHandRenderer.enabled, Is.False);
+        Assert.That(offHandRenderer.enabled, Is.True);
     }
 
     [Test]
     public void UnequippingWeapon_HidesItsMount()
     {
         EquipBothWeapons();
-        var meleeRenderer = CreateMount(EquipmentSlotType.MeleeWeapon);
+        var mainHandRenderer = CreateMount(EquipmentSlotType.MainHand);
 
-        holder.Model.TryUnequipToBag(EquipmentSlotType.MeleeWeapon, 19);
+        GameSession.Loadout.Equipment.Set(EquipmentSlotType.MainHand, null);
+        GameSession.Raid.NotifyChanged();
 
-        Assert.That(meleeRenderer.enabled, Is.False);
+        Assert.That(mainHandRenderer.enabled, Is.False);
+    }
+
+    /// <summary>
+    /// 挂点直接读 <see cref="GameSession.Raid"/>，因此不依赖 prefab 上的任何引用接线，
+    /// 不会出现「漏接 holder 导致永远不显示武器」。
+    /// </summary>
+    [Test]
+    public void Refresh_ReadsRaidEquipmentWithoutAnyWiring()
+    {
+        EquipBothWeapons();
+        var offHandRenderer = CreateMount(EquipmentSlotType.OffHand);
+
+        selector.Toggle();
+
+        Assert.That(selector.ActiveSlot, Is.EqualTo(EquipmentSlotType.OffHand));
+        Assert.That(offHandRenderer.enabled, Is.True);
+        Assert.That(offHandRenderer.sprite, Is.Not.Null);
     }
 
     private void WireRenderer()
@@ -137,25 +159,16 @@ public sealed class WeaponMountSlotTests
         serialized.ApplyModifiedPropertiesWithoutUndo();
     }
 
-    /// <summary>装备上刀和枪两种武器（等价于玩家在背包里把两把都装上）。</summary>
+    /// <summary>装备上刀和枪两种武器（等价于玩家在局内把两把都装上）。</summary>
     private void EquipBothWeapons()
     {
-        var contextRoot = new GameObject("PlayerContext");
-        spawned.Add(contextRoot);
-        holder = contextRoot.AddComponent<InventoryHolder>();
-
         var selectorRoot = new GameObject("Selector");
         spawned.Add(selectorRoot);
         selector = selectorRoot.AddComponent<PlayerWeaponSelector>();
-
-        var serialized = new SerializedObject(selector);
-        serialized.FindProperty("holder").objectReferenceValue = holder;
-        serialized.ApplyModifiedPropertiesWithoutUndo();
-
         EditModeLifecycle.Invoke(selector, "OnEnable");
 
-        sword = ItemDefinitionFactory.Create(null, sprite, 0.4f, EquipmentSlotType.MeleeWeapon);
-        rifle = ItemDefinitionFactory.Create(null, sprite, 0.4f, EquipmentSlotType.RangedWeapon);
+        sword = ItemInstance.Create(ItemDefinitionFactory.Create(null, sprite, 0.4f, EquipmentSlotType.MainHand));
+        rifle = ItemInstance.Create(ItemDefinitionFactory.Create(null, sprite, 0.4f, EquipmentSlotType.OffHand));
 
         Equip(sword);
         Equip(rifle);
@@ -174,7 +187,6 @@ public sealed class WeaponMountSlotTests
 
         var serialized = new SerializedObject(mount);
         serialized.FindProperty("weaponRenderer").objectReferenceValue = renderer;
-        serialized.FindProperty("holder").objectReferenceValue = holder;
         serialized.FindProperty("selector").objectReferenceValue = selector;
         serialized.FindProperty("mountedSlot").enumValueIndex = (int)mountedSlot;
         serialized.ApplyModifiedPropertiesWithoutUndo();
@@ -183,16 +195,16 @@ public sealed class WeaponMountSlotTests
         return renderer;
     }
 
-    private void Equip(ItemDefinition item)
+    /// <summary>把武器装到「主手优先」的第一个空武器槽，模拟玩家在局内装备。</summary>
+    private static void Equip(ItemInstance item)
     {
-        holder.Model.TryAdd(item);
-
-        for (var i = 0; i < Inventory.BagCapacity; i++)
+        foreach (var slot in EquipmentSlots.WeaponSlots)
         {
-            if (holder.Model.GetBagItem(i) != item)
+            if (GameSession.Loadout.Equipment.Get(slot) != null)
                 continue;
 
-            holder.Model.TryEquipFromBag(i, item.EquipSlotType);
+            GameSession.Loadout.Equipment.Set(slot, item);
+            GameSession.Raid.NotifyChanged();
             return;
         }
     }

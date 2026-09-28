@@ -10,7 +10,7 @@ public sealed class PlayerCurrency : MonoBehaviour
 {
     [SerializeField] private TMP_Text display;
     [SerializeField] private string prefsKey = "StarCoins";
-    [SerializeField] private int initialBalance = 1240;
+    [SerializeField] private int initialBalance = 20000;
 
     private int balance;
 

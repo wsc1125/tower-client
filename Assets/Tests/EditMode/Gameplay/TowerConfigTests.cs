@@ -22,33 +22,33 @@ public sealed class TowerConfigTests
     {
         Assert.That(config.HealthGrowthPerFloor, Is.EqualTo(0.15f).Within(0.0001f));
         Assert.That(config.DamageGrowthPerFloor, Is.EqualTo(0.10f).Within(0.0001f));
-        Assert.That(config.MaxEnemiesPerFloor, Is.EqualTo(6));
+        Assert.That(config.StartingEnemiesPerFloor, Is.EqualTo(3));
+        Assert.That(config.MaxEnemiesPerFloor, Is.EqualTo(12));
         Assert.That(config.RetreatEveryFloors, Is.EqualTo(5));
     }
 
     [Test]
-    public void NewInstance_HasEmptyPoolAndTiers()
+    public void NewInstance_HasEmptyPoolAndNoLootPool()
     {
         Assert.That(config.EnemyPool.Count, Is.Zero);
-        Assert.That(config.LootTiers.Count, Is.Zero);
+        Assert.That(config.LootPool, Is.Null);
     }
 
     [Test]
-    public void Configure_StoresPoolAndTiers()
+    public void Configure_StoresPoolAndLootPool()
     {
         var prefab = new GameObject("Enemy");
-        var table = ScriptableObject.CreateInstance<LootTable>();
+        var loot = ScriptableObject.CreateInstance<LootPool>();
 
         config.Configure(
             new[] { new TowerConfig.EnemyWeight { prefab = prefab, weight = 3 } },
-            new[] { new TowerConfig.LootTier { fromFloor = 1, table = table } });
+            loot);
 
         Assert.That(config.EnemyPool.Count, Is.EqualTo(1));
         Assert.That(config.EnemyPool[0].weight, Is.EqualTo(3));
-        Assert.That(config.LootTiers.Count, Is.EqualTo(1));
-        Assert.That(config.LootTiers[0].table, Is.SameAs(table));
+        Assert.That(config.LootPool, Is.SameAs(loot));
 
         Object.DestroyImmediate(prefab);
-        Object.DestroyImmediate(table);
+        Object.DestroyImmediate(loot);
     }
 }

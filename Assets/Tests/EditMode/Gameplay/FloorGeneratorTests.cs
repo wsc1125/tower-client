@@ -26,11 +26,11 @@ public sealed class FloorGeneratorTests
         return go;
     }
 
-    private LootTable CreateTable()
+    private LootPool CreatePool()
     {
-        var table = ScriptableObject.CreateInstance<LootTable>();
-        created.Add(table);
-        return table;
+        var pool = ScriptableObject.CreateInstance<LootPool>();
+        created.Add(pool);
+        return pool;
     }
 
     // ---------- ResolveEnemyCount ----------
@@ -57,6 +57,24 @@ public sealed class FloorGeneratorTests
     {
         Assert.That(FloorGenerator.ResolveEnemyCount(0, 2, 6), Is.EqualTo(1));
         Assert.That(FloorGenerator.ResolveEnemyCount(-5, 2, 6), Is.EqualTo(1));
+    }
+
+    [Test]
+    public void ResolveEnemyCount_StartsFromConfiguredCount()
+    {
+        // 起始 3 只、每层 +1、上限 12。
+        Assert.That(FloorGenerator.ResolveEnemyCount(1, 3, 1, 12), Is.EqualTo(3));
+        Assert.That(FloorGenerator.ResolveEnemyCount(2, 3, 1, 12), Is.EqualTo(4));
+        Assert.That(FloorGenerator.ResolveEnemyCount(5, 3, 1, 12), Is.EqualTo(7));
+        Assert.That(FloorGenerator.ResolveEnemyCount(10, 3, 1, 12), Is.EqualTo(12));
+        Assert.That(FloorGenerator.ResolveEnemyCount(50, 3, 1, 12), Is.EqualTo(12));
+    }
+
+    [Test]
+    public void ResolveEnemyCount_ClampsStartingCountToOne()
+    {
+        Assert.That(FloorGenerator.ResolveEnemyCount(1, 0, 1, 12), Is.EqualTo(1));
+        Assert.That(FloorGenerator.ResolveEnemyCount(1, -3, 1, 12), Is.EqualTo(1));
     }
 
     // ---------- 难度系数 ----------
@@ -107,40 +125,33 @@ public sealed class FloorGeneratorTests
         Assert.That(FloorGenerator.IsRetreatFloor(5, -1), Is.False);
     }
 
-    // ---------- 掉落分档 ----------
+    // ---------- 掉落池 ----------
 
     [Test]
-    public void ResolveLootTable_PicksHighestTierNotAboveFloor()
+    public void Generate_UsesConfiguredLootPool()
     {
-        var tier1 = CreateTable();
-        var tier2 = CreateTable();
-        var tier5 = CreateTable();
-        var tiers = new List<TowerConfig.LootTier>
-        {
-            new TowerConfig.LootTier { fromFloor = 1, table = tier1 },
-            new TowerConfig.LootTier { fromFloor = 5, table = tier2 },
-            new TowerConfig.LootTier { fromFloor = 20, table = tier5 },
-        };
+        var pool = CreatePool();
+        var config = ScriptableObject.CreateInstance<TowerConfig>();
+        created.Add(config);
+        config.Configure(
+            new[] { new TowerConfig.EnemyWeight { prefab = CreatePrefab("A"), weight = 1 } },
+            pool);
 
-        Assert.That(FloorGenerator.ResolveLootTable(1, tiers), Is.SameAs(tier1));
-        Assert.That(FloorGenerator.ResolveLootTable(4, tiers), Is.SameAs(tier1));
-        Assert.That(FloorGenerator.ResolveLootTable(5, tiers), Is.SameAs(tier2));
-        Assert.That(FloorGenerator.ResolveLootTable(19, tiers), Is.SameAs(tier2));
-        Assert.That(FloorGenerator.ResolveLootTable(20, tiers), Is.SameAs(tier5));
-        Assert.That(FloorGenerator.ResolveLootTable(100, tiers), Is.SameAs(tier5));
+        var plan = FloorGenerator.Generate(3, config, new System.Random(1));
+
+        Assert.That(plan.LootPool, Is.SameAs(pool));
     }
 
     [Test]
-    public void ResolveLootTable_ReturnsNullWhenNoTierMatches()
+    public void Generate_LootPoolIsNullWhenNotConfigured()
     {
-        var tier = CreateTable();
-        var tiers = new List<TowerConfig.LootTier>
-        {
-            new TowerConfig.LootTier { fromFloor = 5, table = tier },
-        };
+        var config = ScriptableObject.CreateInstance<TowerConfig>();
+        created.Add(config);
+        config.Configure(
+            new[] { new TowerConfig.EnemyWeight { prefab = CreatePrefab("A"), weight = 1 } },
+            null);
 
-        Assert.That(FloorGenerator.ResolveLootTable(1, tiers), Is.Null);
-        Assert.That(FloorGenerator.ResolveLootTable(1, null), Is.Null);
+        Assert.That(FloorGenerator.Generate(1, config, new System.Random(1)).LootPool, Is.Null);
     }
 
     // ---------- 敌人抽取 ----------
@@ -208,14 +219,14 @@ public sealed class FloorGeneratorTests
         created.Add(config);
         config.Configure(
             new[] { new TowerConfig.EnemyWeight { prefab = CreatePrefab("A"), weight = 1 } },
-            new[] { new TowerConfig.LootTier { fromFloor = 1, table = CreateTable() } });
+            CreatePool());
 
         var plan = FloorGenerator.Generate(3, config, new System.Random(1));
 
         Assert.That(plan.Floor, Is.EqualTo(3));
-        Assert.That(plan.Enemies.Length, Is.EqualTo(FloorGenerator.ResolveEnemyCount(3, config.FloorsPerExtraEnemy, config.MaxEnemiesPerFloor)));
+        Assert.That(plan.Enemies.Length, Is.EqualTo(FloorGenerator.ResolveEnemyCount(3, config.StartingEnemiesPerFloor, config.FloorsPerExtraEnemy, config.MaxEnemiesPerFloor)));
         Assert.That(plan.IsRetreatFloor, Is.False);
-        Assert.That(plan.LootTable, Is.SameAs(config.LootTiers[0].table));
+        Assert.That(plan.LootPool, Is.SameAs(config.LootPool));
     }
 
     [Test]
@@ -225,7 +236,7 @@ public sealed class FloorGeneratorTests
         created.Add(config);
         config.Configure(
             new[] { new TowerConfig.EnemyWeight { prefab = CreatePrefab("A"), weight = 1 } },
-            new[] { new TowerConfig.LootTier { fromFloor = 1, table = CreateTable() } });
+            CreatePool());
 
         Assert.That(FloorGenerator.Generate(5, config, new System.Random(1)).IsRetreatFloor, Is.True);
         Assert.That(FloorGenerator.Generate(0, config, new System.Random(1)).Floor, Is.EqualTo(1));
@@ -238,6 +249,6 @@ public sealed class FloorGeneratorTests
 
         Assert.That(plan.Floor, Is.EqualTo(1));
         Assert.That(plan.Enemies, Is.Empty);
-        Assert.That(plan.LootTable, Is.Null);
+        Assert.That(plan.LootPool, Is.Null);
     }
 }

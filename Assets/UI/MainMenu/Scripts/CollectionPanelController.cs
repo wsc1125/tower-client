@@ -1,13 +1,16 @@
 using System.Collections;
 using System.Collections.Generic;
-using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
 
 /// <summary>
-/// 收藏展馆面板：4×4 图标网格 + 文字进度 + 全收集奖励状态。
+/// 收藏展馆面板：把已登记的收藏品以图标形式平铺在底板上。
 ///
-/// 无格子底框、无进度条（进度用文字呈现）。超出 16 件时靠 ScrollRect 纵向滑动。
+/// 设计要点：
+///   - 无格子底框，图标直接浮在底板星空区上。
+///   - 4 列网格，图标尽可能大，超出视口靠 ScrollRect 纵向滑动。
+///   - 不显示任何进度文字，只做展品陈列。
+///
 /// 奖励发放：订阅 <see cref="CollectionService.RewardGranted"/> 后转交 <see cref="PlayerCurrency.Add"/>。
 /// </summary>
 public sealed class CollectionPanelController : MonoBehaviour
@@ -18,25 +21,15 @@ public sealed class CollectionPanelController : MonoBehaviour
     [SerializeField] private Button maskButton;
     [SerializeField] private Button closeButton;
 
-    [Header("图标")]
-    [Tooltip("预置的收藏图标视图（一屏格数）。图鉴超出时按需克隆最后一个作为模板。")]
+    [Header("展品网格")]
+    [Tooltip("预置的展品视图（一屏格数）。图鉴超出时按需克隆最后一个作为模板。")]
     [SerializeField] private CollectionSlotView[] slots;
 
-    [Tooltip("格子容器。其高度由本脚本按 GridLayoutGroup 的 preferredHeight 驱动。")]
+    [Tooltip("展品容器。其高度由本脚本按 GridLayoutGroup 的 preferredHeight 驱动。")]
     [SerializeField] private RectTransform slotContainer;
 
-    [Tooltip("格子容器上的网格布局。用于计算内容总高度。")]
+    [Tooltip("展品容器上的网格布局。用于计算内容总高度。")]
     [SerializeField] private GridLayoutGroup slotGrid;
-
-    [Header("文本")]
-    [SerializeField] private TMP_Text progressText;
-    [SerializeField] private TMP_Text allCollectedText;
-
-    [Header("全收集弹窗")]
-    [Tooltip("全收集达成时弹出的提示窗；可为空。")]
-    [SerializeField] private GameObject allCollectedPopup;
-    [SerializeField] private TMP_Text allCollectedPopupText;
-    [SerializeField] private Button allCollectedPopupCloseButton;
 
     [Header("数据")]
     [SerializeField] private ItemDatabase database;
@@ -44,8 +37,8 @@ public sealed class CollectionPanelController : MonoBehaviour
     [SerializeField] private PlayerCurrency currency;
 
     [Header("动画")]
-    [SerializeField] private float openDuration = 0.15f;
-    [SerializeField] private float closeDuration = 0.1f;
+    [SerializeField] private float openDuration = 0.18f;
+    [SerializeField] private float closeDuration = 0.12f;
 
     private Coroutine animationRoutine;
     private readonly List<CollectionSlotView> runtimeSlots = new List<CollectionSlotView>();
@@ -59,10 +52,6 @@ public sealed class CollectionPanelController : MonoBehaviour
 
         if (modalRoot != null)
             modalRoot.SetActive(false);
-
-        // 全收集弹窗默认隐藏。
-        if (allCollectedPopup != null)
-            allCollectedPopup.SetActive(false);
     }
 
     private void OnEnable()
@@ -101,7 +90,7 @@ public sealed class CollectionPanelController : MonoBehaviour
         PlayAnimation(open: false);
     }
 
-    /// <summary>按当前进度刷新全部图标与文本。</summary>
+    /// <summary>按当前进度刷新全部展品。</summary>
     public void Refresh()
     {
         var items = CollectionService.Collectibles;
@@ -122,34 +111,17 @@ public sealed class CollectionPanelController : MonoBehaviour
             }
             else
             {
-                // 图鉴不足一屏时隐藏多余格子。
+                // 图鉴不足一屏时隐藏多余展位。
                 slot.gameObject.SetActive(false);
             }
         }
 
         ApplyContainerHeight();
-
-        if (progressText != null)
-        {
-            var lit = CollectionService.LitCount;
-            var total = CollectionService.TotalCount;
-            var pending = CollectionService.ObtainedCount - lit;
-            progressText.text = $"已点亮 {lit} / {total} · 待点亮 {pending} 件";
-        }
-
-        if (allCollectedText != null)
-        {
-            var done = CollectionService.Progress.AllCollectedRewarded;
-            var amount = catalog != null ? catalog.AllCollectedReward : 0;
-            allCollectedText.text = done
-                ? $"全收集奖励：{amount} 星币  [已达成]"
-                : $"全收集奖励：{amount} 星币  [未达成]";
-        }
     }
 
     /// <summary>
-    /// 保证格子数量不少于图鉴条目数：预置格子不够时，克隆最后一个作为模板继续追加。
-    /// 这样图鉴新增物品后无需改 prefab 即可自动多出格子（超出视口靠 ScrollRect 滑动）。
+    /// 保证展位数量不少于图鉴条目数：预置展位不够时，克隆最后一个作为模板继续追加。
+    /// 这样图鉴新增物品后无需改 prefab 即可自动多出展位（超出视口靠 ScrollRect 滑动）。
     /// </summary>
     private void EnsureSlotCount(int required)
     {
@@ -177,7 +149,7 @@ public sealed class CollectionPanelController : MonoBehaviour
     ///
     /// 不用 ContentSizeFitter：它与 GridLayoutGroup 会形成循环依赖
     /// （fitter 要 grid 的 preferredHeight，grid 要 rect 的 width，而 rect 的 height 又由 fitter 决定），
-    /// 实测 preferredHeight 恒为 0、所有格子堆在原点。改为显式赋值即可打破循环。
+    /// 实测 preferredHeight 恒为 0、所有展位堆在原点。改为显式赋值即可打破循环。
     ///
     /// 注意：刚 SetActive(true) 的同一帧，容器宽度可能尚未算出，preferredHeight 会是 0。
     /// 因此本方法在面板打开期间由 LateUpdate 持续校正，直到高度稳定。
@@ -186,6 +158,11 @@ public sealed class CollectionPanelController : MonoBehaviour
     {
         if (slotContainer == null || slotGrid == null)
             return;
+
+        // 先自下而上重建父级链，让 rect.width 在布局系统内部真正生效。
+        var parent = slotContainer.parent as RectTransform;
+        if (parent != null)
+            LayoutRebuilder.ForceRebuildLayoutImmediate(parent);
 
         // 容器宽度为 0 时网格无法换行，算不出高度，等下一帧。
         if (slotContainer.rect.width <= 0f)
@@ -204,7 +181,7 @@ public sealed class CollectionPanelController : MonoBehaviour
 
     private void LateUpdate()
     {
-        // 面板打开期间持续校正容器高度：分辨率变化、格子增删都能自适应。
+        // 面板打开期间持续校正容器高度：分辨率变化、展位增删都能自适应。
         if (IsOpen)
             ApplyContainerHeight();
     }
@@ -221,22 +198,6 @@ public sealed class CollectionPanelController : MonoBehaviour
     {
         if (currency != null)
             currency.Add(amount);
-
-        // 按奖励类型区分提示方式：全收集奖励单独弹窗。
-        if (kind == CollectionRewardKind.AllCollected)
-            ShowAllCollectedPopup(amount);
-    }
-
-    /// <summary>显示全收集达成弹窗。</summary>
-    private void ShowAllCollectedPopup(int amount)
-    {
-        if (allCollectedPopup == null)
-            return;
-
-        if (allCollectedPopupText != null)
-            allCollectedPopupText.text = $"全收集达成！获得 {amount} 星币";
-
-        allCollectedPopup.SetActive(true);
     }
 
     private void BindButtons()
@@ -246,16 +207,6 @@ public sealed class CollectionPanelController : MonoBehaviour
 
         if (maskButton != null)
             maskButton.onClick.AddListener(Close);
-
-        if (allCollectedPopupCloseButton != null)
-            allCollectedPopupCloseButton.onClick.AddListener(CloseAllCollectedPopup);
-    }
-
-    /// <summary>关闭全收集弹窗。</summary>
-    private void CloseAllCollectedPopup()
-    {
-        if (allCollectedPopup != null)
-            allCollectedPopup.SetActive(false);
     }
 
     private void PlayAnimation(bool open)

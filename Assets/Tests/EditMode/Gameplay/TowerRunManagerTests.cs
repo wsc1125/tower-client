@@ -14,7 +14,7 @@ public sealed class TowerRunManagerTests
         config = ScriptableObject.CreateInstance<TowerConfig>();
         config.Configure(
             new[] { new TowerConfig.EnemyWeight { prefab = null, weight = 1 } },
-            new[] { new TowerConfig.LootTier { fromFloor = 1, table = null } });
+            null);
 
         root = new GameObject("TowerRunManager");
         manager = root.AddComponent<TowerRunManager>();
@@ -29,6 +29,7 @@ public sealed class TowerRunManagerTests
     {
         Object.DestroyImmediate(root);
         Object.DestroyImmediate(config);
+        GameSession.ResetForTests();
     }
 
     [Test]
@@ -41,44 +42,37 @@ public sealed class TowerRunManagerTests
     [Test]
     public void BuildResultEntries_MapsCollectedLoot()
     {
-        var first = ScriptableObject.CreateInstance<ItemDefinition>();
-        var second = ScriptableObject.CreateInstance<ItemDefinition>();
+        var first = TestItems.WeaponInstance("A");
+        var second = TestItems.WeaponInstance("B");
 
-        manager.State.BeginRun();
-        manager.State.RecordLoot(first);
-        manager.State.RecordLoot(second);
+        GameSession.Raid.RecordLoot(first);
+        GameSession.Raid.RecordLoot(second);
 
         var entries = manager.BuildResultEntries();
 
         Assert.That(entries.Count, Is.EqualTo(2));
 
-        Object.DestroyImmediate(first);
-        Object.DestroyImmediate(second);
+        Object.DestroyImmediate(first.Definition);
+        Object.DestroyImmediate(second.Definition);
     }
 
     [Test]
     public void BuildResultEntries_ReturnsEmptyWhenNoLoot()
     {
-        manager.State.BeginRun();
-
         Assert.That(manager.BuildResultEntries().Count, Is.Zero);
     }
 
     [Test]
     public void TotalLootValue_SumsItemValues()
     {
-        var item = ScriptableObject.CreateInstance<ItemDefinition>();
-        var serialized = new UnityEditor.SerializedObject(item);
-        serialized.FindProperty("value").intValue = 120;
-        serialized.ApplyModifiedPropertiesWithoutUndo();
+        var item = TestItems.WeaponInstance("战利品", 120);
 
-        manager.State.BeginRun();
-        manager.State.RecordLoot(item);
-        manager.State.RecordLoot(item);
+        GameSession.Raid.RecordLoot(item);
+        GameSession.Raid.RecordLoot(item);
 
         Assert.That(manager.TotalLootValue(), Is.EqualTo(240));
 
-        Object.DestroyImmediate(item);
+        Object.DestroyImmediate(item.Definition);
     }
 
     [Test]
@@ -92,18 +86,13 @@ public sealed class TowerRunManagerTests
     }
 
     [Test]
-    public void AbortRun_FinishesAndClearsLoot()
+    public void AbortRun_FinishesRun()
     {
-        var item = ScriptableObject.CreateInstance<ItemDefinition>();
         manager.State.BeginRun();
-        manager.State.RecordLoot(item);
 
         manager.AbortRun();
 
         Assert.That(manager.State.IsFinished, Is.True);
-        Assert.That(manager.State.CollectedLoot.Count, Is.Zero);
-
-        Object.DestroyImmediate(item);
     }
 
     [Test]
@@ -124,5 +113,68 @@ public sealed class TowerRunManagerTests
         Assert.That(manager.IsFloorCleared(), Is.False);
 
         Object.DestroyImmediate(swarmRoot);
+    }
+
+    [Test]
+    public void ResolveSpawnPosition_ReturnsDesiredWhenNoRoomBounds()
+    {
+        // 未解析出房间边界时不做钳制，原样返回。
+        Assert.That(manager.HasRoomBounds, Is.False);
+        Assert.That(manager.ResolveSpawnPosition(new Vector2(99f, -99f)), Is.EqualTo(new Vector2(99f, -99f)));
+    }
+
+    [Test]
+    public void ResolveSpawnPosition_ClampsIntoRoomWithMargin()
+    {
+        // 房间 x:[-18.6, 21.1] y:[-17.1, 7.6]，margin 1.5
+        SetRoomBounds(new Rect(-18.6f, -17.1f, 39.7f, 24.7f));
+
+        var clamped = manager.ResolveSpawnPosition(new Vector2(100f, 100f));
+
+        Assert.That(clamped.x, Is.EqualTo(21.1f - 1.5f).Within(0.001f));
+        Assert.That(clamped.y, Is.EqualTo(7.6f - 1.5f).Within(0.001f));
+    }
+
+    [Test]
+    public void ResolveSpawnPosition_KeepsPointAlreadyInside()
+    {
+        SetRoomBounds(new Rect(-18.6f, -17.1f, 39.7f, 24.7f));
+
+        var inside = new Vector2(0f, 0f);
+
+        Assert.That(manager.ResolveSpawnPosition(inside), Is.EqualTo(inside));
+    }
+
+    [Test]
+    public void ResolveSpawnPosition_FallsBackToCenterWhenRoomSmallerThanMargin()
+    {
+        // 房间比两倍 margin 还小时，退化为房间中心，避免 Min > Max。
+        SetRoomBounds(new Rect(0f, 0f, 2f, 2f));
+
+        var clamped = manager.ResolveSpawnPosition(new Vector2(50f, 50f));
+
+        Assert.That(clamped.x, Is.EqualTo(1f).Within(0.001f));
+        Assert.That(clamped.y, Is.EqualTo(1f).Within(0.001f));
+    }
+
+    [Test]
+    public void ResolveSpawnPosition_ClampsPatrolEndpointBackInsideRoom()
+    {
+        // 出生点靠近右墙时，以它为中心的巡逻端点会落到墙外，必须被钳回来。
+        SetRoomBounds(new Rect(-6.5f, -5.72f, 13.55f, 9.2f));
+
+        var spawn = manager.ResolveSpawnPosition(new Vector2(5.56f, -1.12f));
+        var patrolB = manager.ResolveSpawnPosition(spawn + new Vector2(1.5f, 0f));
+
+        Assert.That(manager.RoomBounds.Contains(patrolB), Is.True);
+        Assert.That(patrolB.x, Is.EqualTo(7.05f - 1.5f).Within(0.001f));
+    }
+
+    private void SetRoomBounds(Rect bounds)
+    {
+        var serialized = new UnityEditor.SerializedObject(manager);
+        serialized.FindProperty("roomBounds").rectValue = bounds;
+        serialized.FindProperty("hasRoomBounds").boolValue = true;
+        serialized.ApplyModifiedPropertiesWithoutUndo();
     }
 }

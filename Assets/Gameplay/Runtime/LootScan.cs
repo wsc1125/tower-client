@@ -4,7 +4,7 @@ using UnityEngine;
 public static class LootScan
 {
     /// 半径内是否存在存活敌人（已死亡的敌人不算）。
-    public static bool HasAliveEnemyWithin(EnemyBrain2D[] enemies, Vector2 origin, float radius)
+    public static bool HasAliveEnemyWithin(IDamageable[] enemies, Vector2 origin, float radius)
     {
         if (enemies == null)
             return false;

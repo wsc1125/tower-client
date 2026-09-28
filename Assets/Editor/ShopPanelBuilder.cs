@@ -255,16 +255,6 @@ public static class ShopPanelBuilder
                 context.SetParent(contents.transform, false);
             }
 
-            var holder = context.GetComponent<InventoryHolder>();
-            if (holder == null)
-                holder = context.gameObject.AddComponent<InventoryHolder>();
-
-            var holderSerialized = new SerializedObject(holder);
-            holderSerialized.FindProperty("loadFromSave").boolValue = true;
-            holderSerialized.FindProperty("database").objectReferenceValue =
-                AssetDatabase.LoadAssetAtPath<ItemDatabase>(ItemDatabasePath);
-            holderSerialized.ApplyModifiedPropertiesWithoutUndo();
-
             var instance = (GameObject)PrefabUtility.InstantiatePrefab(panelPrefab, contents.transform);
             instance.transform.SetAsLastSibling();
 
@@ -272,7 +262,8 @@ public static class ShopPanelBuilder
             var currency = contents.GetComponentInChildren<PlayerCurrency>(true);
 
             var controllerSerialized = new SerializedObject(controller);
-            controllerSerialized.FindProperty("holder").objectReferenceValue = holder;
+            controllerSerialized.FindProperty("database").objectReferenceValue =
+                AssetDatabase.LoadAssetAtPath<ItemDatabase>(ItemDatabasePath);
             controllerSerialized.FindProperty("currency").objectReferenceValue = currency;
             controllerSerialized.ApplyModifiedPropertiesWithoutUndo();
 

@@ -33,5 +33,9 @@ public sealed class EnemyStatScaler : MonoBehaviour
         var mortar = GetComponent<ArtilleryMortar2D>();
         if (mortar != null)
             mortar.ScaleDamage(damageMultiplier);
+
+        var melee = GetComponent<MeleeAttacker2D>();
+        if (melee != null)
+            melee.ScaleDamage(damageMultiplier);
     }
 }

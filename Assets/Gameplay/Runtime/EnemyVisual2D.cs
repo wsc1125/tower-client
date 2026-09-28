@@ -20,6 +20,9 @@ public sealed class EnemyVisual2D : MonoBehaviour
 
     public bool AttackFinished { get; private set; }
 
+    /// <summary>死亡动画是否已播完（非循环，播完停在最后一帧）。</summary>
+    public bool DeathFinished { get; private set; }
+
     /// <summary>
     /// 是否配置了攻击动画帧。没有攻击帧时 <see cref="AttackFinished"/> 永远不会置位，
     /// 调用方据此判断能否进入「攻击执行到底」的锁定，避免永久停在攻击状态。
@@ -40,6 +43,7 @@ public sealed class EnemyVisual2D : MonoBehaviour
             previousAttackFrame = 0;
             firedThisAttack = false;
             AttackFinished = false;
+            DeathFinished = false;
             previousState = state;
         }
         else
@@ -65,6 +69,7 @@ public sealed class EnemyVisual2D : MonoBehaviour
 
         previousAttackFrame = frame;
         AttackFinished = state == EnemyState.Attack && rawFrame >= frames.Length;
+        DeathFinished = state == EnemyState.Dead && rawFrame >= frames.Length;
         return shouldFire;
     }
 
@@ -85,6 +90,9 @@ public sealed class EnemyVisual2D : MonoBehaviour
             case EnemyState.Retreat:
                 framesPerSecond = moveFramesPerSecond;
                 return moveFrames;
+            case EnemyState.Recover:
+                // 喘息期间原地不动，播 idle 帧，视觉上明确「收招了」。
+                break;
             case EnemyState.Patrol:
                 if (velocity.sqrMagnitude > 0.0001f)
                 {
