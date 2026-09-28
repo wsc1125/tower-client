@@ -409,6 +409,10 @@ public sealed class TowerRunManager : MonoBehaviour
         SubscribePortalConfirm();
 
         pendingPortalKind = kind;
+
+        // 弹窗期间冻结本地玩家：单机下世界本来就没暂停（旧行为），
+        // 这里只保证玩家不会在「确认 / 取消」之间继续走动、把传送点踩乱。
+        LocalPauseScope.Freeze();
         portalConfirmPanel.Show(kind);
     }
 
@@ -417,6 +421,8 @@ public sealed class TowerRunManager : MonoBehaviour
     {
         if (portalConfirmPanel != null)
             portalConfirmPanel.Hide();
+
+        LocalPauseScope.Unfreeze();
 
         if (pendingPortalKind == null)
             return;
@@ -431,6 +437,8 @@ public sealed class TowerRunManager : MonoBehaviour
     {
         if (portalConfirmPanel != null)
             portalConfirmPanel.Hide();
+
+        LocalPauseScope.Unfreeze();
 
         pendingPortalKind = null;
 
@@ -448,6 +456,10 @@ public sealed class TowerRunManager : MonoBehaviour
     {
         if (state.IsFinished)
             return;
+
+        // 换层 / 撤退都要恢复本地玩家：确认弹窗期间被冻结，这里兜底解除，
+        // 避免任何路径下把「本机玩家不能动」的状态带进下一层。
+        LocalPauseScope.Unfreeze();
 
         if (kind == PortalKind.Retreat)
         {
@@ -476,6 +488,10 @@ public sealed class TowerRunManager : MonoBehaviour
     public void AbortRun()
     {
         state.Finish();
+
+        // 死亡流程会自行决定暂停语义（单机 timeScale / 联机本地冻结），
+        // 这里只解除「传送确认弹窗」可能留下的本地冻结，避免两者叠加。
+        LocalPauseScope.Unfreeze();
     }
 
     /// <summary>把本局战利品清单转成结算面板的展示数据。</summary>
@@ -522,6 +538,7 @@ public sealed class TowerRunManager : MonoBehaviour
             Debug.LogWarning($"[TowerRunManager] 仓库已满，有 {overflow} 件战利品未能带出。");
 
         // 死亡流程会把 timeScale 置 0 暂停游戏；这里兜底恢复，避免任何路径下把暂停状态带进主菜单。
+        LocalPauseScope.Unfreeze();
         Time.timeScale = 1f;
         SceneManager.LoadScene(mainMenuSceneName);
     }

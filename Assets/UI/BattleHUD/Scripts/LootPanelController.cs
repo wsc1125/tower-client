@@ -30,6 +30,11 @@ public sealed class LootPanelController : MonoBehaviour
         if (hintRemaining <= 0f)
             return;
 
+        // 本地冻结（联机弹窗）期间提示不消失：世界照常推进，但本机 UI 停住。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
+            return;
+
         hintRemaining = Mathf.Max(0f, hintRemaining - Time.unscaledDeltaTime);
         if (hintRemaining <= 0f && hintText != null)
             hintText.text = string.Empty;

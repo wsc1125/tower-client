@@ -73,6 +73,11 @@ public sealed class FloorPortal2D : MonoBehaviour
         if (veil == null || consumed)
             return;
 
+        // 本地冻结（联机弹窗）期间脉动停住：世界照常推进，但传送点看起来是静止的。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
+            return;
+
         var wave = Mathf.Sin(Time.time * pulseSpeed * Mathf.PI * 2f + pulsePhase);
 
         var color = veilBaseColor;

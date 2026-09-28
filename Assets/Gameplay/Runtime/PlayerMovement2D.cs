@@ -34,7 +34,11 @@ public class PlayerMovement2D : MonoBehaviour
 
     private void Update()
     {
-        resolvedInput = ResolveMovementInput(ReadKeyboardInput(), ReadJoystickInput());
+        // 本地冻结（联机弹窗）期间输入归零：世界照常推进，但本机玩家不动。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        resolvedInput = LocalPauseScope.IsFrozen
+            ? Vector2.zero
+            : ResolveMovementInput(ReadKeyboardInput(), ReadJoystickInput());
 
         if (visual != null)
         {

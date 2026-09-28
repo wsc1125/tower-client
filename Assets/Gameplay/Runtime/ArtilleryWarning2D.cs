@@ -44,6 +44,11 @@ public sealed class ArtilleryWarning2D : MonoBehaviour
         if (!playing)
             return;
 
+        // 本地冻结（联机弹窗）期间预警圈停住：世界照常推进，但本机看到的倒计时暂停。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
+            return;
+
         elapsed += Time.deltaTime;
         var t = Mathf.Clamp01(elapsed / duration);
 

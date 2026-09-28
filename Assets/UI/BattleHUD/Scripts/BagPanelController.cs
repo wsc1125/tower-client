@@ -120,6 +120,11 @@ public sealed class BagPanelController : MonoBehaviour
         if (repairHoldSlot == EquipmentSlotType.None)
             return;
 
+        // 本地冻结（联机弹窗）期间蓄力停住：世界照常推进，但本机 UI 停住。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
+            return;
+
         // 拖拽已结束（松手）→ 取消蓄力，不修复。
         if (!activeDrag.HasValue)
         {

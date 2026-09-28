@@ -308,6 +308,11 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
 
     private void FixedUpdate()
     {
+        // 本地冻结（联机弹窗）期间敌人停住：世界照常推进，但本机看到的敌人暂停。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
+            return;
+
         cooldownRemaining = Mathf.Max(0f, cooldownRemaining - Time.fixedDeltaTime);
         recoverRemaining = Mathf.Max(0f, recoverRemaining - Time.fixedDeltaTime);
 

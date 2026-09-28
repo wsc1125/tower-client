@@ -43,6 +43,11 @@ public sealed class DamageVignetteController : MonoBehaviour
         if (currentAlpha <= 0f)
             return;
 
+        // 本地冻结（联机弹窗）期间红边不淡出：世界照常推进，但本机玩家的受击反馈停住。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
+            return;
+
         currentAlpha = Mathf.Max(0f, currentAlpha - fadeSpeed * Time.deltaTime);
         ApplyAlpha(currentAlpha);
     }

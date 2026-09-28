@@ -83,6 +83,11 @@ public sealed class EnemyLaserProjectile2D : MonoBehaviour
 
     private void FixedUpdate()
     {
+        // 本地冻结（联机弹窗）期间弹幕停住：世界照常推进，但本机看到的弹幕暂停。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
+            return;
+
         age += Time.fixedDeltaTime;
         body.MovePosition(body.position + direction * (speed * Time.fixedDeltaTime));
 

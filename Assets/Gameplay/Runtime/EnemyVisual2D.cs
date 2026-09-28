@@ -37,6 +37,11 @@ public sealed class EnemyVisual2D : MonoBehaviour
 
     public bool Step(EnemyState state, Vector2 velocity, float deltaTime)
     {
+        // 本地冻结（联机弹窗）期间动画停住：世界照常推进，但敌人看起来是静止的。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
+            return false;
+
         if (state != previousState)
         {
             elapsed = 0f;

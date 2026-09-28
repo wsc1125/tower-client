@@ -134,6 +134,11 @@ public sealed class SwarmChaser2D : MonoBehaviour, IDamageable
 
     private void FixedUpdate()
     {
+        // 本地冻结（联机弹窗）期间虫群停住：世界照常推进，但本机看到的虫群暂停。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
+            return;
+
         if (isDead)
         {
             // 死亡后只播死亡动画，播完销毁（虫群是廉价产物，不留尸体）

@@ -7,8 +7,11 @@ using UnityEngine.SceneManagement;
 /// 局外仓库与局外装备不受影响 —— 这是「死亡只丢局内携带」规则的落点。
 ///
 /// 丢弃放在玩家确认之后执行，避免死亡瞬间到确认之间经由变更存档把掉落物留下来。
-/// 暂停用 <see cref="Time.timeScale"/> = 0，因此本组件所有等待都必须用 unscaledTime，
-/// 否则协程会永远停住。
+///
+/// 暂停分两种语义（见 <see cref="LocalPauseScope"/>）：
+/// ① 单机：<see cref="Time.timeScale"/> = 0，整个世界停住，行为与改造前完全一致；
+/// ② 联机：只冻结本地玩家，世界照常推进（否则房主一死全队都动不了）。
+/// 单机下 timeScale 为 0，因此本组件所有等待都必须用 unscaledTime，否则协程会永远停住。
 /// </summary>
 public sealed class PlayerDeathFlow2D : MonoBehaviour
 {
@@ -24,6 +27,10 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
 
     [Tooltip("无提示面板时的兜底延迟（秒）。有面板时以玩家点击为准。")]
     [SerializeField] private float delayBeforeExit = 1.5f;
+
+    [Tooltip("联机模式。勾选后死亡只冻结本地玩家，不冻结世界（避免房主一死全队停住）。\n" +
+             "单机保持不勾选，行为与改造前完全一致。")]
+    [SerializeField] private bool multiplayerMode;
 
     private bool deathHandled;
 
@@ -52,6 +59,9 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
 
         if (deathPanel != null)
             deathPanel.Confirmed -= HandleConfirmed;
+
+        // 组件被禁用时兜底解除冻结，避免把「本机玩家不能动」的状态带出本场景。
+        LocalPauseScope.Unfreeze();
     }
 
     private void HandleDeath()
@@ -65,8 +75,11 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
         if (towerRun != null)
             towerRun.AbortRun();
 
-        // 暂停游戏：敌人、子弹、动画全部停住，玩家只能看到死亡提示。
-        Time.timeScale = 0f;
+        // 暂停：单机冻结整个世界，联机只冻结本地玩家。
+        if (multiplayerMode)
+            LocalPauseScope.Freeze();
+        else
+            Time.timeScale = 0f;
 
         if (deathPanel != null)
         {
@@ -86,13 +99,13 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
             deathPanel.Confirmed -= HandleConfirmed;
 
         AbandonRaid();
-        Time.timeScale = 1f;
+        ResumeWorld();
         SceneManager.LoadScene(mainMenuSceneName);
     }
 
     private IEnumerator ExitAfterDelay()
     {
-        // 已暂停，必须用 unscaledTime 计时。
+        // 单机下已暂停，必须用 unscaledTime 计时。
         var remaining = Mathf.Max(0f, delayBeforeExit);
         while (remaining > 0f)
         {
@@ -101,8 +114,15 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
         }
 
         AbandonRaid();
-        Time.timeScale = 1f;
+        ResumeWorld();
         SceneManager.LoadScene(mainMenuSceneName);
+    }
+
+    /// <summary>解除暂停。单机恢复 timeScale，联机解除本地冻结。</summary>
+    private void ResumeWorld()
+    {
+        LocalPauseScope.Unfreeze();
+        Time.timeScale = 1f;
     }
 
     private void AbandonRaid()

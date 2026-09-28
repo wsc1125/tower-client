@@ -181,6 +181,11 @@ public sealed class BossBrain2D : MonoBehaviour, IDamageable
 
     private void FixedUpdate()
     {
+        // 本地冻结（联机弹窗）期间 BOSS 停住：世界照常推进，但本机看到的 BOSS 暂停。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
+            return;
+
         if (IsDead)
         {
             HandleDeath();

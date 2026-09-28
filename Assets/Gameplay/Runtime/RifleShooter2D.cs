@@ -143,6 +143,14 @@ public sealed class RifleShooter2D : MonoBehaviour
         if (!EnsureReady())
             return;
 
+        // 本地冻结（联机弹窗）期间不开火：世界照常推进，但本机玩家不能攻击。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
+        {
+            ResetPose();
+            return;
+        }
+
         // 枪不在手上（没装备或被切到近战）时不瞄准、不开火，并把姿态与朝向收干净，
         // 否则收起枪后人物仍会「面朝敌人」，移动朝向会被带偏。
         if (ActiveMount == null || !ActiveMount.HasWeapon)

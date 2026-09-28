@@ -116,6 +116,11 @@ public sealed class Projectile2D : MonoBehaviour
         if (IsExpired)
             return;
 
+        // 本地冻结（联机弹窗）期间子弹停住：世界照常推进，但本机看到的子弹暂停。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
+            return;
+
         age += deltaTime;
 
         if (body != null)

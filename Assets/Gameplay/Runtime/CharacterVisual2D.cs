@@ -59,6 +59,15 @@ public sealed class CharacterVisual2D : MonoBehaviour
         if (animation == null)
             animation = new SpriteFrameAnimation(moveFrames, framesPerSecond);
 
+        // 本地冻结（联机弹窗）期间动画停住：世界照常推进，但本机玩家看起来是静止的。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
+        {
+            animation.Reset();
+            ApplyFrame(animation.CurrentFrame);
+            return;
+        }
+
         var facingSource = facingOverride.HasValue ? facingOverride.Value : velocity;
         if (TryResolveFacing(facingSource, out var resolved))
             ApplyFacing(resolved);
@@ -100,6 +109,11 @@ public sealed class CharacterVisual2D : MonoBehaviour
     private void StepHitFlash(float deltaTime)
     {
         if (hitFlashRemaining <= 0f)
+            return;
+
+        // 本地冻结（联机弹窗）期间闪烁计时停住：世界照常推进，但本机玩家的受击反馈停住。
+        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
+        if (LocalPauseScope.IsFrozen)
             return;
 
         hitFlashRemaining = Mathf.Max(0f, hitFlashRemaining - Mathf.Max(0f, deltaTime));
