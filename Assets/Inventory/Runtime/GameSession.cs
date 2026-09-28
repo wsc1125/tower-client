@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
@@ -10,16 +11,37 @@ using UnityEngine;
 /// </summary>
 public static class GameSession
 {
-    private static PlayerLoadout loadout;
-    private static RaidBag raidBag;
+    public const string LocalPlayerId = "local";
+
+    private static readonly Dictionary<string, PlayerContext> players =
+        new Dictionary<string, PlayerContext>();
+
     private static ItemDatabase database;
     private static bool initialized;
 
+    /// <summary>当前进程内按 PlayerId 管理的玩家上下文。</summary>
+    public static IPlayerContext GetPlayer(string playerId)
+    {
+        var resolvedId = string.IsNullOrWhiteSpace(playerId) ? LocalPlayerId : playerId;
+        if (!players.TryGetValue(resolvedId, out var context))
+        {
+            context = new PlayerContext(resolvedId);
+            context.Loadout.Changed += () => HandleLoadoutChanged(context);
+            context.Raid.Changed += () => HandleRaidChanged(context);
+            players.Add(resolvedId, context);
+        }
+
+        return context;
+    }
+
+    /// <summary>单机与现有调用方使用的本地玩家上下文。</summary>
+    public static IPlayerContext Local => GetPlayer(LocalPlayerId);
+
     /// <summary>局外资产：仓库 + 装备槽。跨场景常驻。</summary>
-    public static PlayerLoadout Loadout => loadout ??= CreateLoadout();
+    public static PlayerLoadout Loadout => Local.Loadout;
 
     /// <summary>当前局内携带。未出征时为空包。</summary>
-    public static RaidBag Raid => raidBag ??= CreateRaidBag();
+    public static RaidBag Raid => Local.Raid;
 
     /// <summary>是否已经初始化过（用于判断是否需要注入初始装备）。</summary>
     public static bool Initialized => initialized;
@@ -66,24 +88,6 @@ public static class GameSession
         }
 
         bag.NotifyChanged();
-    }
-
-    /// <summary>
-    /// 创建局外容器并接上变更通知。事件在创建时就接好，
-    /// 这样即使调用方没走 <see cref="EnsureInitialized"/>，<see cref="LoadoutChanged"/> 也照常触发。
-    /// </summary>
-    private static PlayerLoadout CreateLoadout()
-    {
-        var created = new PlayerLoadout();
-        created.Changed += HandleLoadoutChanged;
-        return created;
-    }
-
-    private static RaidBag CreateRaidBag()
-    {
-        var created = new RaidBag();
-        created.Changed += HandleRaidChanged;
-        return created;
     }
 
     /// <summary>
@@ -134,15 +138,11 @@ public static class GameSession
     /// <summary>清空全部数据并删除存档。仅用于「重新开始」与测试。</summary>
     public static void ResetAll()
     {
-        // 先摘掉存档订阅再清空，否则 ClearAll 后的通知会把空数据重新写回存档。
+        // ClearAll 不触发 Changed，因此不会把空数据提前写回存档。
         var target = Loadout;
-        target.Changed -= HandleLoadoutChanged;
-
         target.ClearAll();
         Raid.ClearAll();
         PlayerSaveStore.Delete();
-
-        target.Changed += HandleLoadoutChanged;
 
         LoadoutChanged?.Invoke();
         RaidChanged?.Invoke();
@@ -151,9 +151,8 @@ public static class GameSession
     /// <summary>测试用：把会话恢复到未初始化状态。</summary>
     public static void ResetForTests()
     {
-        // 容器在创建时已接上事件，这里只需丢弃引用即可（旧对象随之被回收）。
-        loadout = null;
-        raidBag = null;
+        // 容器在创建时已接上事件，这里只需清空玩家上下文即可（旧对象随之被回收）。
+        players.Clear();
         database = null;
         initialized = false;
         LoadoutChanged = null;
@@ -176,19 +175,23 @@ public static class GameSession
                 continue;
             }
 
-            loadout.Equipment.Set(item.EquipSlotType, ItemInstance.Create(item));
+            Loadout.Equipment.Set(item.EquipSlotType, ItemInstance.Create(item));
         }
     }
 
-    private static void HandleLoadoutChanged()
+    private static void HandleLoadoutChanged(IPlayerContext context)
     {
-        PlayerSaveStore.Save(loadout);
-        PlayerSaveStore.Flush();
-        LoadoutChanged?.Invoke();
+        if (context.PlayerId == LocalPlayerId)
+        {
+            PlayerSaveStore.Save(context.Loadout);
+            PlayerSaveStore.Flush();
+            LoadoutChanged?.Invoke();
+        }
     }
 
-    private static void HandleRaidChanged()
+    private static void HandleRaidChanged(IPlayerContext context)
     {
-        RaidChanged?.Invoke();
+        if (context.PlayerId == LocalPlayerId)
+            RaidChanged?.Invoke();
     }
 }
