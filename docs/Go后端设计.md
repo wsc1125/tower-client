@@ -346,10 +346,15 @@ type Member struct {
 | 创建 | 落库（`status=waiting`）+ 内存建 Room + 房主加入 |
 | 加入 | 校验：房间存在 / 未满 / 状态为 `waiting` → 内存加成员 → 广播 `member_joined` |
 | 离开 | 内存移除成员 → 广播 `member_left` |
-| 房主离开 | **房间关闭**（本期不做房主迁移）→ 广播 `room_closed` → 落库 `status=closed` |
+| **房主离开（房间内还有其他人）** | **房主迁移**：把 `host_account` 移交给剩余成员中**最早加入**的一位 → 落库更新 `host_account` → 广播 `host_changed`。房间不关闭 |
+| **房主离开（房间已空）** | 房间关闭 → 落库 `status=closed` |
 | 全员离开 | 房间关闭 |
 | 开始游戏 | 房主触发 → `status=playing` → 落库 → 广播 `game_starting` |
 | 超时清理 | 后台任务：`waiting` 且 2 小时无活动的房间自动关闭 |
+
+> **房主迁移的职责边界**：服务端只负责**房间层面的房主移交**（更新 `host_account` + 广播 `host_changed`）。
+> **游戏层面的权威移交**（`NetworkObject` 所有权转移）由客户端 NGO 侧完成，服务端不参与。
+> 两者通过 `host_changed` 消息衔接：客户端收到后自行执行权威接管。
 
 ### 3.3 信令模块
 
@@ -414,6 +419,7 @@ type Member struct {
 | `member_left` | `{ account_id }` | 有玩家离开 |
 | `signal` | `{ from_account_id, data }` | 转发来的信令数据 |
 | `game_starting` | `{ host_account_id, host_endpoint }` | 开始游戏，附带主机地址 |
+| `host_changed` | `{ new_host_account_id, new_host_display_name }` | 房主迁移，客户端据此执行权威接管 |
 | `room_closed` | `{ reason }` | 房间关闭 |
 | `error` | `{ code, message }` | 错误 |
 | `pong` | `{}` | 保活响应 |
@@ -637,19 +643,39 @@ A、B 交换地址后尝试直连
 2. 优先尝试 host / srflx（直连）候选
 3. 直连超时 → 使用 relay 候选（中继）
 
-### 5.3 房主离开
+### 5.3 房主离开（房主迁移）
 
 ```
 房主断开 WebSocket
   │
   ├─ 服务端检测到连接关闭
   ├─ 从房间移除房主
-  ├─ 房间状态 → closed（落库）
-  ├─ 广播 room_closed 给所有成员
-  └─ 所有成员回到主菜单
+  │
+  ├─ 房间内还有其他人？
+  │    ├─ 是 → 选出剩余成员中「最早加入」的一位作为新房主
+  │    │      ├─ 落库更新 rooms.host_account
+  │    │      ├─ 广播 host_changed { new_host_account_id, ... }
+  │    │      └─ 客户端收到后执行权威接管（NetworkObject 所有权转移）
+  │    │
+  │    └─ 否 → 房间关闭
+  │           ├─ 落库 status = closed
+  │           └─ （无人在线，无需广播）
+  │
+  └─ 原房主本地：AbandonRaid() + 回主菜单
 ```
 
-**本期不做房主迁移**（联机方案 4.4 列为可选）。房主离开 = 本局结束。
+**职责边界（重要）**：
+
+| 层面 | 由谁做 | 内容 |
+|---|---|---|
+| 房间层面 | **Go 服务端** | 更新 `host_account`、广播 `host_changed` |
+| 游戏层面 | **客户端 NGO** | `NetworkObject` 所有权转移、权威接管 |
+
+服务端**不参与**游戏层面的权威移交——它不知道游戏里有哪些 `NetworkObject`，也不该知道（保持「不碰游戏逻辑」的边界）。
+
+**迁移目标选择**：剩余成员中 `JoinedAt` 最早的一位。理由：加入越早，对当前局状态越熟悉，且顺序确定（无需协商，避免多端竞争）。
+
+**与掉线迁移的区别**：本节是**主动退出**（连接正常关闭，服务端能立即感知）。房主**掉线**（网络中断）需要超时判定，属于阶段 4 的 4.4。
 
 ---
 
@@ -840,8 +866,8 @@ volumes:
 | 2 | 数据库迁移 + sqlc 接入 | 1 |
 | 3 | 账号模块（注册 / 登录 / JWT） | 2 |
 | 4 | 认证中间件 + 限流 | 3 |
-| 5 | 房间模块（CRUD + 内存注册表） | 4 |
-| 6 | 信令模块（WebSocket + 消息协议） | 5 |
+| 5 | 房间模块（CRUD + 内存注册表 + **房主迁移**） | 4 |
+| 6 | 信令模块（WebSocket + 消息协议 + `host_changed` 广播） | 5 |
 | 7 | 中继凭证接口 + coturn 接入 | 6 |
 | 8 | docker compose 本地一键拉起 | 7 |
 | 9 | **穿透验证（1A.7）** | 8 |
