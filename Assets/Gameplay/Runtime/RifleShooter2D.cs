@@ -375,13 +375,11 @@ public sealed class RifleShooter2D : MonoBehaviour
 
     private Transform FindNearestEnemy()
     {
-        var brains = FindObjectsOfType<EnemyBrain2D>(false);
-        var swarms = FindObjectsOfType<SwarmChaser2D>(false);
-        enemies = new IDamageable[brains.Length + swarms.Length];
-        for (var i = 0; i < brains.Length; i++)
-            enemies[i] = brains[i];
-        for (var i = 0; i < swarms.Length; i++)
-            enemies[brains.Length + i] = swarms[i];
+        var registered = WorldRegistry.Damageables;
+        enemies = new IDamageable[registered.Count];
+        var index = 0;
+        foreach (var damageable in registered)
+            enemies[index++] = damageable;
 
         Transform best = null;
         var bestSqr = aimRadius * aimRadius;

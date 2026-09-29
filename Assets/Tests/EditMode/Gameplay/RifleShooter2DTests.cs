@@ -19,6 +19,7 @@ public sealed class RifleShooter2DTests
     [SetUp]
     public void SetUp()
     {
+        WorldRegistry.ClearForTests();
         GameSession.ResetForTests();
         texture = new Texture2D(4, 4);
         sprite = Sprite.Create(texture, new Rect(0f, 0f, 4f, 4f), new Vector2(0.5f, 0.5f));
@@ -77,6 +78,7 @@ public sealed class RifleShooter2DTests
         Object.DestroyImmediate(buttonRoot);
         Object.DestroyImmediate(sprite);
         Object.DestroyImmediate(texture);
+        WorldRegistry.ClearForTests();
         GameSession.ResetForTests();
     }
 

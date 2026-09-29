@@ -48,13 +48,15 @@ public sealed class SpawnerSummoner2D : MonoBehaviour
     private int CountAliveSwarms()
     {
         var count = 0;
-        var all = FindObjectsOfType<EnemyBrain2D>();
-        foreach (var candidate in all)
+        foreach (var candidate in WorldRegistry.Damageables)
         {
-            if (candidate == null || candidate == brain || candidate.IsDead)
+            if (candidate == null || candidate.IsDead)
                 continue;
 
-            if (candidate.GetComponent<SpawnerSummoner2D>() != null)
+            if (candidate is EnemyBrain2D candidateBrain && candidateBrain == brain)
+                continue;
+
+            if (candidate is EnemyBrain2D enemy && enemy.GetComponent<SpawnerSummoner2D>() != null)
                 continue;
 
             count++;

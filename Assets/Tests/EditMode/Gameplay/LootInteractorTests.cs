@@ -16,6 +16,7 @@ public sealed class LootInteractorTests
     [SetUp]
     public void SetUp()
     {
+        WorldRegistry.ClearForTests();
         GameSession.ResetForTests();
         item = ItemDefinitionFactory.Create(null, null, 0.4f);
         instance = ItemInstance.Create(item);
@@ -48,6 +49,7 @@ public sealed class LootInteractorTests
         Object.DestroyImmediate(panelRoot);
         Object.DestroyImmediate(droppedRoot);
         Object.DestroyImmediate(item);
+        WorldRegistry.ClearForTests();
         GameSession.ResetForTests();
     }
 

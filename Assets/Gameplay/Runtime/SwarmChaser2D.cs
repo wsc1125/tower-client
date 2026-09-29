@@ -56,6 +56,7 @@ public sealed class SwarmChaser2D : MonoBehaviour, IDamageable
 
     private void Awake()
     {
+        WorldRegistry.Register(this);
         body = GetComponent<Rigidbody2D>();
         if (bodyCollider == null)
             bodyCollider = GetComponent<Collider2D>();
@@ -68,6 +69,16 @@ public sealed class SwarmChaser2D : MonoBehaviour, IDamageable
         currentHealth = Mathf.Max(1f, maximumHealth);
 
         EnsureTargetProvider();
+    }
+
+    private void OnEnable()
+    {
+        WorldRegistry.Register(this);
+    }
+
+    private void OnDisable()
+    {
+        WorldRegistry.Unregister(this);
     }
 
     /// <summary>

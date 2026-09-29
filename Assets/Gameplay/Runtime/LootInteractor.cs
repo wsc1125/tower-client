@@ -99,18 +99,11 @@ public sealed class LootInteractor : MonoBehaviour
     /// </summary>
     public static IDamageable[] CollectDamageables()
     {
-        var brains = FindObjectsOfType<EnemyBrain2D>(false);
-        var swarms = FindObjectsOfType<SwarmChaser2D>(false);
-        var bosses = FindObjectsOfType<BossBrain2D>(false);
-
-        var result = new IDamageable[brains.Length + swarms.Length + bosses.Length];
+        var registered = WorldRegistry.Damageables;
+        var result = new IDamageable[registered.Count];
         var index = 0;
-        for (var i = 0; i < brains.Length; i++)
-            result[index++] = brains[i];
-        for (var i = 0; i < swarms.Length; i++)
-            result[index++] = swarms[i];
-        for (var i = 0; i < bosses.Length; i++)
-            result[index++] = bosses[i];
+        foreach (var damageable in registered)
+            result[index++] = damageable;
 
         return result;
     }

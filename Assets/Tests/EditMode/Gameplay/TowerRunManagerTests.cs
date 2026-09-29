@@ -11,6 +11,7 @@ public sealed class TowerRunManagerTests
     [SetUp]
     public void SetUp()
     {
+        WorldRegistry.ClearForTests();
         config = ScriptableObject.CreateInstance<TowerConfig>();
         config.Configure(
             new[] { new TowerConfig.EnemyWeight { prefab = null, weight = 1 } },
@@ -29,6 +30,7 @@ public sealed class TowerRunManagerTests
     {
         Object.DestroyImmediate(root);
         Object.DestroyImmediate(config);
+        WorldRegistry.ClearForTests();
         GameSession.ResetForTests();
     }
 

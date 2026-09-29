@@ -238,8 +238,19 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
 
     private void Awake()
     {
+        WorldRegistry.Register(this);
         EnsureInitialized();
         EnsureTargetProvider();
+    }
+
+    private void OnEnable()
+    {
+        WorldRegistry.Register(this);
+    }
+
+    private void OnDisable()
+    {
+        WorldRegistry.Unregister(this);
     }
 
     /// <summary>

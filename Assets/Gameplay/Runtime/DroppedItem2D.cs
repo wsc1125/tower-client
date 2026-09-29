@@ -15,6 +15,21 @@ public sealed class DroppedItem2D : MonoBehaviour
     /// <summary>物品模板。便捷访问，等价于 <c>Item.Definition</c>。</summary>
     public ItemDefinition Definition => Item != null ? Item.Definition : null;
 
+    private void Awake()
+    {
+        WorldRegistry.Register(this);
+    }
+
+    private void OnEnable()
+    {
+        WorldRegistry.Register(this);
+    }
+
+    private void OnDisable()
+    {
+        WorldRegistry.Unregister(this);
+    }
+
     /// 渲染贴图取 worldSprite，缺失时回退 icon；体量按「最大边」等比缩放到 item.WorldSize。
     /// 只调整体量、绝不改变比例 —— 细长的剑保持细长，竖立的箱盒保持竖立。
     public void Initialize(ItemInstance item)

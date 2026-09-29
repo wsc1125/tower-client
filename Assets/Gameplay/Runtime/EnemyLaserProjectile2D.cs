@@ -66,14 +66,11 @@ public sealed class EnemyLaserProjectile2D : MonoBehaviour
     /// </summary>
     public void IgnoreAllEnemies()
     {
-        foreach (var enemy in FindObjectsOfType<EnemyBrain2D>())
-            IgnoreCollisionWith(enemy.GetComponent<Collider2D>());
-
-        foreach (var swarm in FindObjectsOfType<SwarmChaser2D>())
-            IgnoreCollisionWith(swarm.GetComponent<Collider2D>());
-
-        foreach (var boss in FindObjectsOfType<BossBrain2D>())
-            IgnoreCollisionWith(boss.GetComponent<Collider2D>());
+        foreach (var enemy in WorldRegistry.Damageables)
+        {
+            var collider = enemy.transform != null ? enemy.transform.GetComponent<Collider2D>() : null;
+            IgnoreCollisionWith(collider);
+        }
     }
 
     private void Awake()

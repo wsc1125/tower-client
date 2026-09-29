@@ -382,10 +382,10 @@ public sealed class TowerRunManager : MonoBehaviour
                 return false;
         }
 
-        // 母巢召唤的虫群不在 spawnedEnemies 里，单独扫一遍。
-        foreach (var swarm in FindObjectsOfType<SwarmChaser2D>())
+        // 母巢召唤的虫群不在 spawnedEnemies 里，单独检查注册表。
+        foreach (var damageable in WorldRegistry.Damageables)
         {
-            if (swarm != null && !swarm.IsDead)
+            if (damageable is SwarmChaser2D swarm && !swarm.IsDead)
                 return false;
         }
 
@@ -730,7 +730,7 @@ public sealed class TowerRunManager : MonoBehaviour
     /// </summary>
     private void ClearDroppedItems()
     {
-        foreach (var dropped in FindObjectsOfType<DroppedItem2D>())
+        foreach (var dropped in WorldRegistry.DroppedItems)
         {
             if (dropped != null)
                 Destroy(dropped.gameObject);
@@ -744,9 +744,9 @@ public sealed class TowerRunManager : MonoBehaviour
     /// </summary>
     private void ClearCorpses()
     {
-        foreach (var brain in FindObjectsOfType<EnemyBrain2D>())
+        foreach (var damageable in WorldRegistry.Damageables)
         {
-            if (brain != null && brain.IsDead)
+            if (damageable is EnemyBrain2D brain && brain.IsDead)
                 Destroy(brain.gameObject);
         }
     }
@@ -773,9 +773,10 @@ public sealed class TowerRunManager : MonoBehaviour
         spawnedEnemies.Clear();
 
         // 母巢召唤的虫群不在 spawnedEnemies 里，换层时一并清掉。
-        foreach (var swarm in FindObjectsOfType<SwarmChaser2D>())
+        var damageables = new List<IDamageable>(WorldRegistry.Damageables);
+        foreach (var damageable in damageables)
         {
-            if (swarm != null)
+            if (damageable is SwarmChaser2D swarm)
                 Destroy(swarm.gameObject);
         }
 
