@@ -95,7 +95,7 @@ public sealed class WeaponMountSlot : MonoBehaviour
         if (weaponRenderer == null)
             return;
 
-        var instance = GameSession.Loadout.Equipment.Get(mountedSlot);
+        var instance = GameSession.LocalPlayer.Loadout.Equipment.Get(mountedSlot);
         var sprite = instance != null && instance.Definition != null ? instance.Definition.WorldSprite : null;
 
         weaponRenderer.sprite = sprite;

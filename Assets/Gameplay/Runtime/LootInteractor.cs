@@ -116,7 +116,7 @@ public sealed class LootInteractor : MonoBehaviour
 
         // 局内拾取进「携带」，与局内背包面板展示的是同一份数据；
         // 仓库只在主菜单里管理，战斗内不展示。
-        if (!GameSession.Raid.TryAddToCarry(dropped.Item))
+        if (!GameSession.LocalPlayer.Raid.TryAddToCarry(dropped.Item))
         {
             if (panel != null)
                 panel.ShowHint("背包已满");
@@ -125,7 +125,7 @@ public sealed class LootInteractor : MonoBehaviour
         }
 
         // 记入本局战利品清单，撤退结算面板据此展示。
-        GameSession.Raid.RecordLoot(dropped.Item);
+        GameSession.LocalPlayer.Raid.RecordLoot(dropped.Item);
 
         if (Application.isPlaying)
             Destroy(dropped.gameObject);

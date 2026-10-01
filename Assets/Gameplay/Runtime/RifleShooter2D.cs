@@ -73,7 +73,7 @@ public sealed class RifleShooter2D : MonoBehaviour
         get
         {
             var mount = ActiveMount;
-            var instance = mount != null ? GameSession.Loadout.Equipment.Get(mount.MountedSlot) : null;
+            var instance = mount != null ? GameSession.LocalPlayer.Loadout.Equipment.Get(mount.MountedSlot) : null;
             return instance != null ? instance.Definition : null;
         }
     }

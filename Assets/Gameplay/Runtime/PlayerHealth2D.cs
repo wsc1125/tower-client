@@ -282,7 +282,7 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
         if (restored > 0f)
         {
             RefreshView();
-            GameSession.Raid.NotifyChanged();
+            GameSession.LocalPlayer.Raid.NotifyChanged();
         }
 
         return restored;
@@ -336,7 +336,7 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
         if (amount <= 0 || !EquipmentSlots.IsArmorSlot(slot))
             return 0;
 
-        var instance = GameSession.Loadout.Equipment.Get(slot);
+        var instance = GameSession.LocalPlayer.Loadout.Equipment.Get(slot);
         if (instance == null)
             return 0;
 
@@ -356,7 +356,7 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
         if (!EquipmentSlots.IsArmorSlot(slot))
             return 0;
 
-        var instance = GameSession.Loadout.Equipment.Get(slot);
+        var instance = GameSession.LocalPlayer.Loadout.Equipment.Get(slot);
         if (instance == null || !instance.IsRepairable)
             return 0;
 
@@ -369,7 +369,7 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
         if (!EquipmentSlots.IsArmorSlot(slot))
             return ItemRarity.Common;
 
-        var instance = GameSession.Loadout.Equipment.Get(slot);
+        var instance = GameSession.LocalPlayer.Loadout.Equipment.Get(slot);
         return instance != null && instance.Definition != null
             ? instance.Definition.Rarity
             : ItemRarity.Common;
@@ -395,7 +395,7 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
         var equipped = new List<ArmorPiece>();
         foreach (var slot in EquipmentSlots.ArmorSlots)
         {
-            var instance = GameSession.Loadout.Equipment.Get(slot);
+            var instance = GameSession.LocalPlayer.Loadout.Equipment.Get(slot);
             if (instance == null || instance.MaximumDurability <= 0)
                 continue;
 

@@ -32,6 +32,16 @@ public class PlayerMovement2D : MonoBehaviour
         }
     }
 
+    private void OnEnable()
+    {
+        WorldRegistry.Register(this);
+    }
+
+    private void OnDisable()
+    {
+        WorldRegistry.Unregister(this);
+    }
+
     private void Update()
     {
         // 本地冻结（联机弹窗）期间输入归零：世界照常推进，但本机玩家不动。

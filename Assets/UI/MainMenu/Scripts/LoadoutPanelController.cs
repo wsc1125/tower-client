@@ -14,7 +14,7 @@ public enum LoadoutSection
 /// <summary>
 /// 「装备配置」面板：左侧仓库（分页网格），右侧装备槽，右下为物品详情区。
 /// 支持点击选中、拖拽搬运（仓库 ↔ 装备槽任意互换）与出售。
-/// 数据来自 <see cref="GameSession.Loadout"/> —— 局外资产，死亡不会丢失。
+/// 数据来自 <see cref="GameSession.LocalPlayer"/> —— 局外资产，死亡不会丢失。
 /// </summary>
 public sealed class LoadoutPanelController : MonoBehaviour
 {
@@ -78,7 +78,7 @@ public sealed class LoadoutPanelController : MonoBehaviour
     private LoadoutSlotView highlightedSlot;
 
     /// <summary>当前读取的局外资产。</summary>
-    public PlayerLoadout Loadout => GameSession.Loadout;
+    public PlayerLoadout Loadout => GameSession.LocalPlayer.Loadout;
 
     public bool IsOpen => modalRoot != null && modalRoot.activeSelf;
 
@@ -269,7 +269,7 @@ public sealed class LoadoutPanelController : MonoBehaviour
 
         // 局外是唯一允许「仓库 ↔ 携带」自由搬运的地方，因此走 MoveInLoadout。
         // 局内的 Move 重载会拒绝一切涉及仓库的搬运（携带只能在撤离时并入仓库）。
-        return LoadoutService.MoveInLoadout(GameSession.Raid, Loadout, from, to);
+        return LoadoutService.MoveInLoadout(GameSession.LocalPlayer.Raid, Loadout, from, to);
     }
 
     public void Drop(SlotRef target)
@@ -428,7 +428,7 @@ public sealed class LoadoutPanelController : MonoBehaviour
         if (carrySlots != null)
         {
             for (var i = 0; i < carrySlots.Length; i++)
-                carrySlots[i]?.SetItem(GameSession.Raid.GetCarry(i));
+                carrySlots[i]?.SetItem(GameSession.LocalPlayer.Raid.GetCarry(i));
         }
 
         if (equipmentSlots != null)
@@ -460,7 +460,7 @@ public sealed class LoadoutPanelController : MonoBehaviour
             warehouseCountText.text = Loadout.WarehouseCount() + " / " + PlayerLoadout.WarehouseCapacity;
 
         if (carryCountText != null)
-            carryCountText.text = GameSession.Raid.CarryCount() + " / " + RaidBag.CarryCapacity;
+            carryCountText.text = GameSession.LocalPlayer.Raid.CarryCount() + " / " + RaidBag.CarryCapacity;
     }
 
     private void RefreshPager()
@@ -550,7 +550,7 @@ public sealed class LoadoutPanelController : MonoBehaviour
             case SlotArea.Warehouse:
                 return Loadout.GetWarehouse(slot.Index);
             case SlotArea.Carry:
-                return GameSession.Raid.GetCarry(slot.Index);
+                return GameSession.LocalPlayer.Raid.GetCarry(slot.Index);
             default:
                 return Loadout.Equipment.Get(slot.EquipmentSlot);
         }

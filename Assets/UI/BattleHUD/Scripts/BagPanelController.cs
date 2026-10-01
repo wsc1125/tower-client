@@ -67,10 +67,10 @@ public sealed class BagPanelController : MonoBehaviour
     private Image useButtonImage;
 
     /// <summary>当前局内携带。</summary>
-    public RaidBag Bag => GameSession.Raid;
+    public RaidBag Bag => GameSession.LocalPlayer.Raid;
 
     /// <summary>装备槽。与局外是同一份，因此局内换装会直接改到局外资产上。</summary>
-    public PlayerLoadout Loadout => GameSession.Loadout;
+    public PlayerLoadout Loadout => GameSession.LocalPlayer.Loadout;
 
     public bool IsOpen => panelContent != null && panelContent.activeSelf;
 

@@ -1,0 +1,332 @@
+using System;
+using TMPro;
+using UnityEngine;
+using UnityEngine.UI;
+
+/// <summary>
+/// 联机房间面板：创建房间 / 通过房间码加入。
+///
+/// 只做两件事，不做房间列表 —— 房间码本身就是分享凭证，
+/// 玩家口头或聊天里把码给对方即可，列表反而增加无效房间的曝光。
+///
+/// 本组件只负责「收集输入 + 展示结果」，不直接引用 Network 程序集：
+/// 提交与取消通过事件抛给 <see cref="MainMenuRoomBinder"/>，
+/// 由它去调 NetworkSession。这样 UI 层与网络层保持解耦。
+/// </summary>
+[DisallowMultipleComponent]
+public sealed class RoomPanelController : MonoBehaviour
+{
+    [Header("面板")]
+    [SerializeField] private GameObject panelRoot;
+
+    [Header("页签")]
+    [SerializeField] private Button createTabButton;
+    [SerializeField] private Button joinTabButton;
+    [SerializeField] private RectTransform createTabHighlight;
+    [SerializeField] private RectTransform joinTabHighlight;
+
+    [Header("创建房间")]
+    [SerializeField] private GameObject createPage;
+    [SerializeField] private TMP_InputField roomNameInput;
+
+    [Tooltip("人数档位按钮，顺序对应 2 / 3 / 4 人。")]
+    [SerializeField] private Button[] maxPlayersButtons;
+
+    [Tooltip("人数档位按钮上的数字文本，与 maxPlayersButtons 一一对应。")]
+    [SerializeField] private TMP_Text[] maxPlayersLabels;
+
+    [SerializeField] private Button createSubmitButton;
+    [SerializeField] private TMP_Text createSubmitLabel;
+
+    [Header("加入房间")]
+    [SerializeField] private GameObject joinPage;
+    [SerializeField] private TMP_InputField roomCodeInput;
+    [SerializeField] private Button joinSubmitButton;
+    [SerializeField] private TMP_Text joinSubmitLabel;
+
+    [Header("结果")]
+    [SerializeField] private GameObject resultGroup;
+    [SerializeField] private TMP_Text resultCodeText;
+    [SerializeField] private TMP_Text resultHintText;
+    [SerializeField] private Button copyCodeButton;
+    [SerializeField] private Button leaveButton;
+
+    [Header("通用")]
+    [SerializeField] private TMP_Text errorText;
+    [SerializeField] private Button closeButton;
+
+    [Header("配色")]
+    [SerializeField] private Color accentColor = new Color(0.35f, 0.85f, 0.95f, 1f);
+    [SerializeField] private Color inactiveColor = new Color(0.55f, 0.6f, 0.65f, 1f);
+
+    /// <summary>可选人数档位。与服务端约束（2~4）一致。</summary>
+    private static readonly int[] MaxPlayersOptions = { 2, 3, 4 };
+
+    /// <summary>当前选中的人数档位索引。默认 4 人（最后一项）。</summary>
+    private int maxPlayersIndex = MaxPlayersOptions.Length - 1;
+
+    /// <summary>当前是否在「创建房间」页签。</summary>
+    private bool isCreateTab = true;
+
+    /// <summary>提交创建房间。参数：房间名、人数上限。</summary>
+    public event Action<string, int> CreateRequested;
+
+    /// <summary>提交加入房间。参数：房间码。</summary>
+    public event Action<string> JoinRequested;
+
+    /// <summary>请求离开当前房间。</summary>
+    public event Action LeaveRequested;
+
+    /// <summary>面板关闭。</summary>
+    public event Action Closed;
+
+    private void Awake()
+    {
+        if (createTabButton != null)
+            createTabButton.onClick.AddListener(() => SelectTab(true));
+
+        if (joinTabButton != null)
+            joinTabButton.onClick.AddListener(() => SelectTab(false));
+
+        if (maxPlayersButtons != null)
+        {
+            for (var i = 0; i < maxPlayersButtons.Length; i++)
+            {
+                if (maxPlayersButtons[i] == null)
+                    continue;
+
+                // 闭包捕获：必须用局部变量，直接用 i 会让所有回调都指向最后一个值。
+                var index = i;
+                maxPlayersButtons[i].onClick.AddListener(() => SelectMaxPlayers(index));
+            }
+        }
+
+        if (createSubmitButton != null)
+            createSubmitButton.onClick.AddListener(OnCreateClicked);
+
+        if (joinSubmitButton != null)
+            joinSubmitButton.onClick.AddListener(OnJoinClicked);
+
+        if (copyCodeButton != null)
+            copyCodeButton.onClick.AddListener(OnCopyClicked);
+
+        if (leaveButton != null)
+            leaveButton.onClick.AddListener(() => LeaveRequested?.Invoke());
+
+        if (closeButton != null)
+            closeButton.onClick.AddListener(Close);
+
+        // 房间码统一大写：服务端字符集是大写，玩家小写输入也能进。
+        if (roomCodeInput != null)
+            roomCodeInput.onValueChanged.AddListener(OnRoomCodeChanged);
+    }
+
+    private void OnDestroy()
+    {
+        if (roomCodeInput != null)
+            roomCodeInput.onValueChanged.RemoveListener(OnRoomCodeChanged);
+    }
+
+    /// <summary>打开面板，回到创建页。</summary>
+    public void Open()
+    {
+        if (panelRoot != null)
+            panelRoot.SetActive(true);
+
+        SelectTab(true);
+        ClearError();
+        HideResult();
+        SetBusy(false);
+        RefreshMaxPlayersHighlight();
+    }
+
+    /// <summary>关闭面板。</summary>
+    public void Close()
+    {
+        if (panelRoot != null)
+            panelRoot.SetActive(false);
+
+        Closed?.Invoke();
+    }
+
+    /// <summary>是否已打开。</summary>
+    public bool IsOpen => panelRoot != null && panelRoot.activeSelf;
+
+    /// <summary>切换创建 / 加入页。</summary>
+    public void SelectTab(bool isCreate)
+    {
+        isCreateTab = isCreate;
+
+        if (createPage != null)
+            createPage.SetActive(isCreate);
+
+        if (joinPage != null)
+            joinPage.SetActive(!isCreate);
+
+        if (createTabHighlight != null)
+            createTabHighlight.gameObject.SetActive(isCreate);
+
+        if (joinTabHighlight != null)
+            joinTabHighlight.gameObject.SetActive(!isCreate);
+
+        ClearError();
+    }
+
+    /// <summary>显示错误信息。</summary>
+    public void ShowError(string message)
+    {
+        if (errorText != null)
+            errorText.text = message ?? string.Empty;
+
+        SetBusy(false);
+    }
+
+    /// <summary>清空错误信息。</summary>
+    public void ClearError()
+    {
+        if (errorText != null)
+            errorText.text = string.Empty;
+    }
+
+    /// <summary>请求进行中：禁用按钮，避免重复提交。</summary>
+    public void SetBusy(bool busy)
+    {
+        if (createSubmitButton != null)
+            createSubmitButton.interactable = !busy;
+
+        if (joinSubmitButton != null)
+            joinSubmitButton.interactable = !busy;
+
+        if (createSubmitLabel != null)
+            createSubmitLabel.text = busy ? "处理中…" : "创建房间";
+
+        if (joinSubmitLabel != null)
+            joinSubmitLabel.text = busy ? "处理中…" : "加入房间";
+    }
+
+    /// <summary>展示创建成功后的房间码。</summary>
+    public void ShowRoomCode(string roomCode)
+    {
+        if (resultGroup != null)
+            resultGroup.SetActive(true);
+
+        // 结果区与输入区互斥：内容区高度有限，两者同时显示会溢出面板。
+        SetInputAreaVisible(false);
+
+        if (resultCodeText != null)
+            resultCodeText.text = roomCode;
+
+        if (resultHintText != null)
+            resultHintText.text = "把房间码发给好友，对方在「加入房间」里输入即可";
+
+        SetBusy(false);
+    }
+
+    /// <summary>隐藏结果区，恢复输入区。</summary>
+    public void HideResult()
+    {
+        if (resultGroup != null)
+            resultGroup.SetActive(false);
+
+        SetInputAreaVisible(true);
+    }
+
+    /// <summary>显示 / 隐藏输入区（页签 + 两页内容）。</summary>
+    private void SetInputAreaVisible(bool visible)
+    {
+        if (createPage != null)
+            createPage.SetActive(visible && isCreateTab);
+
+        if (joinPage != null)
+            joinPage.SetActive(visible && !isCreateTab);
+
+        if (createTabButton != null)
+            createTabButton.gameObject.SetActive(visible);
+
+        if (joinTabButton != null)
+            joinTabButton.gameObject.SetActive(visible);
+
+        if (createTabHighlight != null)
+            createTabHighlight.gameObject.SetActive(visible && isCreateTab);
+
+        if (joinTabHighlight != null)
+            joinTabHighlight.gameObject.SetActive(visible && !isCreateTab);
+    }
+
+    // ---- 内部 ----
+
+    private void OnCreateClicked()
+    {
+        ClearError();
+
+        var roomName = roomNameInput != null ? roomNameInput.text : string.Empty;
+        roomName = string.IsNullOrWhiteSpace(roomName) ? "未命名房间" : roomName.Trim();
+
+        SetBusy(true);
+        CreateRequested?.Invoke(roomName, MaxPlayersOptions[maxPlayersIndex]);
+    }
+
+    private void OnJoinClicked()
+    {
+        ClearError();
+
+        var code = roomCodeInput != null ? roomCodeInput.text : string.Empty;
+        code = code.Trim().ToUpperInvariant();
+
+        if (code.Length != 8)
+        {
+            ShowError("房间码为 8 位字符");
+            return;
+        }
+
+        SetBusy(true);
+        JoinRequested?.Invoke(code);
+    }
+
+    private void OnCopyClicked()
+    {
+        var code = resultCodeText != null ? resultCodeText.text : string.Empty;
+        if (string.IsNullOrEmpty(code))
+            return;
+
+        GUIUtility.systemCopyBuffer = code;
+
+        if (resultHintText != null)
+            resultHintText.text = "已复制到剪贴板";
+    }
+
+    /// <summary>输入时实时转大写，避免玩家输入小写后提交失败。</summary>
+    private void OnRoomCodeChanged(string value)
+    {
+        var upper = value.ToUpperInvariant();
+        if (upper != value)
+            roomCodeInput.SetTextWithoutNotify(upper);
+    }
+
+    /// <summary>选中人数档位，并刷新高亮。</summary>
+    private void SelectMaxPlayers(int index)
+    {
+        if (index < 0 || index >= MaxPlayersOptions.Length)
+            return;
+
+        maxPlayersIndex = index;
+        RefreshMaxPlayersHighlight();
+    }
+
+    /// <summary>刷新人数档位的高亮：选中项用强调色，其余用次要色。</summary>
+    private void RefreshMaxPlayersHighlight()
+    {
+        if (maxPlayersLabels == null)
+            return;
+
+        for (var i = 0; i < maxPlayersLabels.Length; i++)
+        {
+            if (maxPlayersLabels[i] == null)
+                continue;
+
+            var selected = i == maxPlayersIndex;
+            maxPlayersLabels[i].color = selected ? accentColor : inactiveColor;
+            maxPlayersLabels[i].fontStyle = selected ? FontStyles.Bold : FontStyles.Normal;
+        }
+    }
+}

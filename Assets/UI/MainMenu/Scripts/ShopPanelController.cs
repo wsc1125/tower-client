@@ -51,7 +51,7 @@ public sealed class ShopPanelController : MonoBehaviour
     private List<ItemDefinition> catalog;
 
     /// <summary>当前读取的局外资产。</summary>
-    public PlayerLoadout Loadout => GameSession.Loadout;
+    public PlayerLoadout Loadout => GameSession.LocalPlayer.Loadout;
 
     public bool IsOpen => modalRoot != null && modalRoot.activeSelf;
 
@@ -183,7 +183,7 @@ public sealed class ShopPanelController : MonoBehaviour
         }
 
         // 纯逻辑校验：余额不足 / 仓库满 / 未定价都会在此失败。
-        if (!ShopService.TryPurchase(item, GameSession.Loadout, currency.Balance, out var remaining))
+        if (!ShopService.TryPurchase(item, GameSession.LocalPlayer.Loadout, currency.Balance, out var remaining))
             return;
 
         // 提交余额变化（差额即花费）。仓库变更已由 GameSession 自动落盘。

@@ -19,6 +19,12 @@ public static class GameSession
     private static ItemDatabase database;
     private static bool initialized;
 
+    /// <summary>
+    /// 本机玩家标识。单机下恒为 <see cref="LocalPlayerId"/>；
+    /// 联机下由网络层在连接建立后调用 <see cref="SetLocalPlayerId"/> 绑定到本机账号。
+    /// </summary>
+    private static string localPlayerId = LocalPlayerId;
+
     /// <summary>当前进程内按 PlayerId 管理的玩家上下文。</summary>
     public static IPlayerContext GetPlayer(string playerId)
     {
@@ -36,6 +42,31 @@ public static class GameSession
 
     /// <summary>单机与现有调用方使用的本地玩家上下文。</summary>
     public static IPlayerContext Local => GetPlayer(LocalPlayerId);
+
+    /// <summary>
+    /// 本机玩家上下文 —— 「本机玩家是谁」的唯一来源。
+    ///
+    /// 单机下与 <see cref="Local"/> 等价（都指向 <see cref="LocalPlayerId"/>）；
+    /// 联机下由网络层调用 <see cref="SetLocalPlayerId"/> 绑定到本机账号后，
+    /// 所有「本机玩家」的读写（装备、携带、血量磨损）都落到该账号的上下文上。
+    ///
+    /// 组件一律读这个属性，不要直接读 <see cref="Loadout"/> / <see cref="Raid"/> ——
+    /// 后两者固定取 <see cref="LocalPlayerId"/>，联机下会拿到别人的数据。
+    /// </summary>
+    public static IPlayerContext LocalPlayer => GetPlayer(localPlayerId);
+
+    /// <summary>
+    /// 绑定本机玩家标识。联机时由网络层在连接建立后调用；
+    /// 单机不调用，保持 <see cref="LocalPlayerId"/>。
+    /// 传空则回退到 <see cref="LocalPlayerId"/>。
+    /// </summary>
+    public static void SetLocalPlayerId(string playerId)
+    {
+        localPlayerId = string.IsNullOrWhiteSpace(playerId) ? LocalPlayerId : playerId;
+    }
+
+    /// <summary>本机当前绑定的玩家标识。</summary>
+    public static string LocalPlayerIdValue => localPlayerId;
 
     /// <summary>局外资产：仓库 + 装备槽。跨场景常驻。</summary>
     public static PlayerLoadout Loadout => Local.Loadout;
@@ -155,6 +186,7 @@ public static class GameSession
         players.Clear();
         database = null;
         initialized = false;
+        localPlayerId = LocalPlayerId;
         LoadoutChanged = null;
         RaidChanged = null;
     }

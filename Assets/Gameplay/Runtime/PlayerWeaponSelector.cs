@@ -1,4 +1,4 @@
-﻿using System;
+using System;
 using UnityEngine;
 
 /// <summary>
@@ -54,7 +54,7 @@ public sealed class PlayerWeaponSelector : MonoBehaviour
     /// <summary>另一把已装备武器所在的槽；没有则返回 <see cref="EquipmentSlotType.None"/>。</summary>
     private EquipmentSlotType Other(EquipmentSlotType slot)
     {
-        return GameSession.Loadout.Equipment.OtherWeaponSlot(slot);
+        return GameSession.LocalPlayer.Loadout.Equipment.OtherWeaponSlot(slot);
     }
 
     private void OnEnable()
@@ -76,7 +76,7 @@ public sealed class PlayerWeaponSelector : MonoBehaviour
     /// <summary>按「主手 → 副手」顺序取第一把已装备的武器；两把都没装备时结果为 None（此时手上不会显示任何武器）。</summary>
     private EquipmentSlotType ResolveInitialSlot()
     {
-        return GameSession.Loadout.Equipment.FirstWeaponSlot();
+        return GameSession.LocalPlayer.Loadout.Equipment.FirstWeaponSlot();
     }
 
     /// <summary>
@@ -107,6 +107,6 @@ public sealed class PlayerWeaponSelector : MonoBehaviour
 
     private bool IsEquipped(EquipmentSlotType slot)
     {
-        return slot != EquipmentSlotType.None && GameSession.Loadout.Equipment.Get(slot) != null;
+        return slot != EquipmentSlotType.None && GameSession.LocalPlayer.Loadout.Equipment.Get(slot) != null;
     }
 }

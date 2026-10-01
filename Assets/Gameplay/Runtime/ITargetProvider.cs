@@ -77,29 +77,34 @@ public sealed class NearestPlayerTargetProvider : ITargetProvider
     }
 
     /// <summary>
-    /// 解析当前玩家。缓存失效（被销毁）时重新扫描一次。
-    /// 用 <c>FindObjectsOfType</c> 而非 <c>FindObjectOfType</c>：
-    /// 联机下场景里有多个玩家，需要按距离选最近的。
+    /// 解析当前玩家。缓存失效（被销毁）时重新解析一次。
+    /// 玩家列表来自 <see cref="WorldRegistry.Players"/>（场景注册表），
+    /// 不再用 <c>FindObjectsOfType</c> 全量扫描 —— 联机下场景里有多个玩家，需要按距离选最近的。
     /// </summary>
     private PlayerMovement2D ResolvePlayer()
     {
         if (cachedPlayer != null)
             return cachedPlayer;
 
-        var candidates = Object.FindObjectsOfType<PlayerMovement2D>();
-        if (candidates == null || candidates.Length == 0)
+        var candidates = WorldRegistry.Players;
+        if (candidates == null || candidates.Count == 0)
             return null;
 
         // 单机下只有一个玩家，直接取它 —— 与旧的 FindObjectOfType 行为一致。
-        if (candidates.Length == 1 || self == null)
+        if (candidates.Count == 1 || self == null)
         {
-            cachedPlayer = candidates[0];
+            foreach (var only in candidates)
+            {
+                cachedPlayer = only;
+                break;
+            }
+
             return cachedPlayer;
         }
 
         // 联机下按距离取最近的存活玩家。
         var origin = (Vector2)self.position;
-        var best = candidates[0];
+        PlayerMovement2D best = null;
         var bestSqr = float.PositiveInfinity;
 
         foreach (var candidate in candidates)

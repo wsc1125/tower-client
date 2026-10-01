@@ -2,7 +2,7 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// 战斗场景对象注册表：集中维护可受伤目标与地面掉落物，替代各系统反复全局扫描。
+/// 战斗场景对象注册表：集中维护可受伤目标、地面掉落物与玩家，替代各系统反复全局扫描。
 ///
 /// 对象在 Awake / OnEnable 注册、OnDisable 注销；查询方只读取当前场景已注册对象。
 /// 为兼容「Awake 未触发」的场景（如 EditMode 直接 AddComponent），查询时会补一次
@@ -12,6 +12,7 @@ public static class WorldRegistry
 {
     private static readonly HashSet<IDamageable> damageables = new HashSet<IDamageable>();
     private static readonly HashSet<DroppedItem2D> droppedItems = new HashSet<DroppedItem2D>();
+    private static readonly HashSet<PlayerMovement2D> players = new HashSet<PlayerMovement2D>();
 
     /// <summary>
     /// 被显式注销过的对象。兜底发现必须跳过它们，
@@ -19,6 +20,7 @@ public static class WorldRegistry
     /// </summary>
     private static readonly HashSet<IDamageable> unregisteredDamageables = new HashSet<IDamageable>();
     private static readonly HashSet<DroppedItem2D> unregisteredDroppedItems = new HashSet<DroppedItem2D>();
+    private static readonly HashSet<PlayerMovement2D> unregisteredPlayers = new HashSet<PlayerMovement2D>();
 
     public static IReadOnlyCollection<IDamageable> Damageables
     {
@@ -37,6 +39,20 @@ public static class WorldRegistry
             RemoveInvalidDroppedItems();
             DiscoverDroppedItems();
             return droppedItems;
+        }
+    }
+
+    /// <summary>
+    /// 当前场景的玩家。敌人索敌（<see cref="NearestPlayerTargetProvider"/>）读它，
+    /// 不再用 <c>FindObjectsOfType</c> 全量扫描。
+    /// </summary>
+    public static IReadOnlyCollection<PlayerMovement2D> Players
+    {
+        get
+        {
+            RemoveInvalidPlayers();
+            DiscoverPlayers();
+            return players;
         }
     }
 
@@ -74,13 +90,32 @@ public static class WorldRegistry
             unregisteredDroppedItems.Add(droppedItem);
     }
 
+    public static void Register(PlayerMovement2D player)
+    {
+        if (player == null)
+            return;
+
+        unregisteredPlayers.Remove(player);
+        players.Add(player);
+    }
+
+    public static void Unregister(PlayerMovement2D player)
+    {
+        players.Remove(player);
+
+        if (player != null)
+            unregisteredPlayers.Add(player);
+    }
+
     /// <summary>清空注册表。测试用，保证用例之间互不污染。</summary>
     public static void ClearForTests()
     {
         damageables.Clear();
         droppedItems.Clear();
+        players.Clear();
         unregisteredDamageables.Clear();
         unregisteredDroppedItems.Clear();
+        unregisteredPlayers.Clear();
     }
 
     /// <summary>
@@ -118,6 +153,15 @@ public static class WorldRegistry
         }
     }
 
+    private static void DiscoverPlayers()
+    {
+        foreach (var player in Object.FindObjectsOfType<PlayerMovement2D>(false))
+        {
+            if (!unregisteredPlayers.Contains(player))
+                players.Add(player);
+        }
+    }
+
     private static void RemoveInvalidDamageables()
     {
         // 只按 Unity 对象的「已销毁」语义判空，不访问 transform ——
@@ -128,5 +172,10 @@ public static class WorldRegistry
     private static void RemoveInvalidDroppedItems()
     {
         droppedItems.RemoveWhere(item => item == null);
+    }
+
+    private static void RemoveInvalidPlayers()
+    {
+        players.RemoveWhere(player => player == null);
     }
 }

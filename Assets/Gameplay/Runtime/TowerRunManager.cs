@@ -27,6 +27,7 @@ public sealed class TowerRunManager : MonoBehaviour
     [SerializeField] private StatusPanelController statusPanel;
     [SerializeField] private TowerResultPanelController resultPanel;
     [SerializeField] private PortalConfirmPanelController portalConfirmPanel;
+    [SerializeField] private SettingsPanelController settingsPanel;
     [SerializeField] private PlayerHealth2D playerHealth;
     [SerializeField] private string mainMenuSceneName = "MainMenu";
 
@@ -57,12 +58,16 @@ public sealed class TowerRunManager : MonoBehaviour
     private bool portalsSpawned;
     private bool subscribedDeath;
     private bool subscribedPortalConfirm;
+    private bool subscribedSettings;
 
     /// <summary>本局实际使用的随机种子。0 表示尚未确定（Awake 时会自动生成）。</summary>
     public int RandomSeed => randomSeed;
 
     /// <summary>当前已订阅的确认面板实例。用于判断订阅是否仍然有效。</summary>
     private PortalConfirmPanelController subscribedPortalTarget;
+
+    /// <summary>当前已订阅的设置面板实例。用于判断订阅是否仍然有效。</summary>
+    private SettingsPanelController subscribedSettingsTarget;
 
     /// <summary>确认弹窗打开期间挂起的传送种类；null 表示没有待确认的传送。</summary>
     private PortalKind? pendingPortalKind;
@@ -129,6 +134,7 @@ public sealed class TowerRunManager : MonoBehaviour
         }
 
         SubscribePortalConfirm();
+        SubscribeSettings();
     }
 
     private void OnDisable()
@@ -140,6 +146,7 @@ public sealed class TowerRunManager : MonoBehaviour
         }
 
         UnsubscribePortalConfirm();
+        UnsubscribeSettings();
     }
 
     /// <summary>
@@ -181,6 +188,39 @@ public sealed class TowerRunManager : MonoBehaviour
         subscribedPortalTarget.Cancelled -= HandlePortalCancelled;
         subscribedPortalConfirm = false;
         subscribedPortalTarget = null;
+    }
+
+    /// <summary>
+    /// 幂等订阅设置面板。与 <see cref="SubscribePortalConfirm"/> 同理：
+    /// OnEnable 可能跑在序列化引用赋值之前，必须在真正用到之前补订一次。
+    /// </summary>
+    private void SubscribeSettings()
+    {
+        if (settingsPanel == null)
+            return;
+
+        if (subscribedSettings && subscribedSettingsTarget == settingsPanel)
+            return;
+
+        UnsubscribeSettings();
+
+        settingsPanel.QuitRequested += HandleQuitRequested;
+        subscribedSettings = true;
+        subscribedSettingsTarget = settingsPanel;
+    }
+
+    private void UnsubscribeSettings()
+    {
+        if (!subscribedSettings || subscribedSettingsTarget == null)
+        {
+            subscribedSettings = false;
+            subscribedSettingsTarget = null;
+            return;
+        }
+
+        subscribedSettingsTarget.QuitRequested -= HandleQuitRequested;
+        subscribedSettings = false;
+        subscribedSettingsTarget = null;
     }
 
     private void Start()
@@ -498,7 +538,7 @@ public sealed class TowerRunManager : MonoBehaviour
     public IReadOnlyList<TowerResultEntry> BuildResultEntries()
     {
         var entries = new List<TowerResultEntry>();
-        foreach (var instance in GameSession.Raid.Loot)
+        foreach (var instance in GameSession.LocalPlayer.Raid.Loot)
         {
             var definition = instance != null ? instance.Definition : null;
             if (definition == null)
@@ -519,7 +559,7 @@ public sealed class TowerRunManager : MonoBehaviour
     public int TotalLootValue()
     {
         var total = 0;
-        foreach (var instance in GameSession.Raid.Loot)
+        foreach (var instance in GameSession.LocalPlayer.Raid.Loot)
         {
             if (instance != null && instance.Definition != null)
                 total += instance.Definition.Value;
@@ -546,6 +586,23 @@ public sealed class TowerRunManager : MonoBehaviour
     private void HandlePlayerDied()
     {
         AbortRun();
+    }
+
+    /// <summary>
+    /// 设置面板里确认「退出游戏」：丢弃本局携带与装备槽，返回主菜单。
+    /// 与死亡路径同规则（<see cref="GameSession.AbandonRaid"/>），局外仓库不受影响。
+    /// </summary>
+    private void HandleQuitRequested()
+    {
+        // 先标记本局结束，避免退出过程中残留的 Update / 传送点逻辑继续跑。
+        AbortRun();
+
+        GameSession.AbandonRaid();
+
+        // 设置面板打开时可能冻结过本地玩家；这里兜底恢复，避免把暂停状态带进主菜单。
+        LocalPauseScope.Unfreeze();
+        Time.timeScale = 1f;
+        SceneManager.LoadScene(mainMenuSceneName);
     }
 
     private IEnumerator SpawnPortalsAfterDelay()
