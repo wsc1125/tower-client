@@ -76,7 +76,8 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
             towerRun.AbortRun();
 
         // 暂停：单机冻结整个世界，联机只冻结本地玩家。
-        if (multiplayerMode)
+        // 联机判定以运行时会话为准（prefab 被单机/联机共用，不能只靠 Inspector 开关）。
+        if (multiplayerMode || Tower.Netcode.NetworkGameBootstrap.IsOnlineSession)
             LocalPauseScope.Freeze();
         else
             Time.timeScale = 0f;

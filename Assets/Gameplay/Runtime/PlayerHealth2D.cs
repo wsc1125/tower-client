@@ -389,6 +389,19 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
         RefreshView();
     }
 
+    /// <summary>
+    /// 运行时绑定 HUD 表现层。联机动态生成的玩家来自 prefab，prefab 内不含场景 HUD 组件，
+    /// 需要在生成后把场景里的血量面板 / 受击红边绑给本地玩家，否则血量不显示、受击无反馈。
+    /// </summary>
+    public void BindHud(StatusPanelController panel, DamageVignetteController vignette)
+    {
+        if (panel != null)
+            statusPanel = panel;
+        if (vignette != null)
+            damageVignette = vignette;
+        RefreshView();
+    }
+
     /// <summary>护甲取自局内装备槽 —— 局内换装会立刻反映到减伤上。</summary>
     private void RebuildArmor()
     {

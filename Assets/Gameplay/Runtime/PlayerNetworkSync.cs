@@ -53,6 +53,15 @@ namespace Tower.Netcode
                         movement.SetJoystick(joystick);
                 }
 
+                // 同理，把场景 HUD 的血量面板 / 受击红边绑给本地玩家，否则血量不显示、受击无反馈。
+                var health = GetComponent<PlayerHealth2D>();
+                if (health != null)
+                {
+                    health.BindHud(
+                        FindObjectOfType<StatusPanelController>(),
+                        FindObjectOfType<DamageVignetteController>());
+                }
+
                 // 让相机跟着自己控制的角色走（联机 Bootstrap 激活时才有 Instance，单机为 null 无副作用）。
                 if (Tower.Netcode.NetworkGameBootstrap.Instance != null)
                     Tower.Netcode.NetworkGameBootstrap.Instance.AttachLocalCamera(transform);

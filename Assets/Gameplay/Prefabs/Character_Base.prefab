@@ -282,6 +282,9 @@ GameObject:
   - component: {fileID: 2375190788065242676}
   - component: {fileID: 7744464924610968282}
   - component: {fileID: 6190382089802311392}
+  - component: {fileID: 272804187609970845}
+  - component: {fileID: 2378673160742410763}
+  - component: {fileID: 4954624403984087920}
   m_Layer: 0
   m_Name: Character_Base
   m_TagString: Untagged
@@ -487,6 +490,54 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   movement: {fileID: 0}
+--- !u!114 &272804187609970845
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2260301540689113387}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2a49686f9926c9347b4020ebce74b71d, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  maximumHealth: 100
+  statusPanel: {fileID: 0}
+  combatLockDuration: 3
+  visual: {fileID: 0}
+  damageVignette: {fileID: 0}
+--- !u!114 &2378673160742410763
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2260301540689113387}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c2b48be9b87e3534482411a62b44c3d3, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  playerHealth: {fileID: 0}
+  deathPanel: {fileID: 0}
+  towerRun: {fileID: 0}
+  mainMenuSceneName: MainMenu
+  delayBeforeExit: 1.5
+  multiplayerMode: 0
+--- !u!114 &4954624403984087920
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2260301540689113387}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 7cd32b8f89007d245a75f311e313dcbe, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  dropPrefab: {fileID: 0}
 --- !u!1 &2851256417521745383
 GameObject:
   m_ObjectHideFlags: 0
