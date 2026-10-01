@@ -257,6 +257,11 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
     private IEnumerator LeaveRoutine()
     {
         yield return session.LeaveRoom(null, OnRequestFailed);
+
+        // 退出联机界面即退出联机：离开房间后模式切回单机。
+        // 用 SetMode 而非直接改 UI，让 OnModeChanged 统一处理（含关闭面板）。
+        if (modeTab != null && modeTab.IsOnline)
+            modeTab.SetMode(ModeTabSelector.SingleMode);
     }
 
     private void OnRequestFailed(ApiError error)
