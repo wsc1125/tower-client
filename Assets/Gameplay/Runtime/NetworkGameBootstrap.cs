@@ -126,6 +126,34 @@ namespace Tower.Netcode
             Debug.Log($"[NetBootstrap] 作为房主启动，监听端口 {hostListenPort}");
             networkManager.StartHost();
             BroadcastHostAddress();
+
+            // 后加入的成员在 host 首次广播时还不在房间里，收不到地址。
+            // 订阅成员加入事件，每有新成员进房就补发一次房主地址。
+            var signal = NetworkSession.Instance != null ? NetworkSession.Instance.Signal : null;
+            if (signal != null)
+                signal.MemberJoined += OnMemberJoinedBroadcast;
+        }
+
+        /// <summary>有成员加入房间时，补发房主地址（解决后加入者收不到首次广播的时序问题）。</summary>
+        private void OnMemberJoinedBroadcast(MemberJoinedPayload payload)
+        {
+            if (payload == null || payload.account_id == SelfAccountId())
+                return;
+
+            // 直接发给刚加入的成员：此刻 CurrentRoom.members 可能尚未包含它，
+            // 走 BroadcastHostAddress 的成员遍历会漏发。
+            var signal = NetworkSession.Instance != null ? NetworkSession.Instance.Signal : null;
+            signal?.SendSignal(payload.account_id, connectSignalPrefix + ":" + LocalAddress());
+        }
+
+        private void OnDestroy()
+        {
+            var signal = NetworkSession.Instance != null ? NetworkSession.Instance.Signal : null;
+            if (signal != null)
+            {
+                signal.MemberJoined -= OnMemberJoinedBroadcast;
+                signal.SignalReceived -= OnRemoteSignal;
+            }
         }
 
         private void WaitForHostAddress()
@@ -190,19 +218,46 @@ namespace Tower.Netcode
             }
         }
 
+        /// <summary>
+        /// 取本机对外可用的 IPv4 地址，用于广播给房间成员。
+        /// 优先真实物理网卡（WLAN / 以太网），跳过 WSL / Hyper-V / VMware / VirtualBox 等虚拟网卡，
+        /// 否则本机双端测试时可能广播出虚拟网卡地址（如 172.31.x.x），客户端连不上。
+        /// </summary>
         private string LocalAddress()
         {
+            string fallback = null;
             foreach (var nic in System.Net.NetworkInformation.NetworkInterface.GetAllNetworkInterfaces())
             {
                 if (nic.OperationalStatus != System.Net.NetworkInformation.OperationalStatus.Up)
                     continue;
+                if (nic.NetworkInterfaceType == System.Net.NetworkInformation.NetworkInterfaceType.Loopback)
+                    continue;
+
+                var name = nic.Name ?? string.Empty;
+                var desc = nic.Description ?? string.Empty;
+                var isVirtual = name.IndexOf("WSL", System.StringComparison.OrdinalIgnoreCase) >= 0
+                                || name.IndexOf("Hyper-V", System.StringComparison.OrdinalIgnoreCase) >= 0
+                                || name.IndexOf("VMware", System.StringComparison.OrdinalIgnoreCase) >= 0
+                                || name.IndexOf("VirtualBox", System.StringComparison.OrdinalIgnoreCase) >= 0
+                                || desc.IndexOf("Virtual", System.StringComparison.OrdinalIgnoreCase) >= 0;
+
                 foreach (var addr in nic.GetIPProperties().UnicastAddresses)
                 {
-                    if (addr.Address.AddressFamily == System.Net.Sockets.AddressFamily.InterNetwork)
-                        return addr.Address.ToString();
+                    if (addr.Address.AddressFamily != System.Net.Sockets.AddressFamily.InterNetwork)
+                        continue;
+
+                    var ip = addr.Address.ToString();
+                    // 跳过链路本地地址（169.254.x.x），它不可路由。
+                    if (ip.StartsWith("169.254."))
+                        continue;
+
+                    if (!isVirtual)
+                        return ip;
+                    if (fallback == null)
+                        fallback = ip;
                 }
             }
-            return "127.0.0.1";
+            return fallback ?? "127.0.0.1";
         }
 
         private long[] RoomMemberIds()
