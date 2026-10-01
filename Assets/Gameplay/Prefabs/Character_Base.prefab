@@ -280,6 +280,8 @@ GameObject:
   - component: {fileID: 6823500130972557040}
   - component: {fileID: 5426766265547236993}
   - component: {fileID: 2375190788065242676}
+  - component: {fileID: 7744464924610968282}
+  - component: {fileID: 6190382089802311392}
   m_Layer: 0
   m_Name: Character_Base
   m_TagString: Untagged
@@ -452,6 +454,39 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   switchButton: {fileID: 0}
+--- !u!114 &7744464924610968282
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2260301540689113387}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GlobalObjectIdHash: 951099334
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+--- !u!114 &6190382089802311392
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2260301540689113387}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 5fce9054fbcbdb74fb86ae23c55dd3ab, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  movement: {fileID: 0}
 --- !u!1 &2851256417521745383
 GameObject:
   m_ObjectHideFlags: 0

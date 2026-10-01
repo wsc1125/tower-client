@@ -43,6 +43,10 @@ namespace Tower.Netcode
                     movement.enabled = true;
                 if (body != null)
                     body.isKinematic = false;
+
+                // 让相机跟着自己控制的角色走（联机 Bootstrap 激活时才有 Instance，单机为 null 无副作用）。
+                if (Tower.Netcode.NetworkGameBootstrap.Instance != null)
+                    Tower.Netcode.NetworkGameBootstrap.Instance.AttachLocalCamera(transform);
             }
             else
             {

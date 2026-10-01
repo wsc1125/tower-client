@@ -43,6 +43,9 @@ namespace Tower.Netcode
         private bool started;
         private string receivedHostAddress;
 
+        /// <summary>联机时被隐藏的场景静态玩家（单机挂载的角色）。隐藏后不再参与移动/战斗，避免与网络动态玩家冲突。</summary>
+        private GameObject staticPlayer;
+
         private static NetworkGameBootstrap _instance;
         public static NetworkGameBootstrap Instance => _instance;
 
@@ -80,6 +83,14 @@ namespace Tower.Netcode
                 cameraFollow = FindObjectOfType<CameraFollow2D>();
             if (towerRun == null)
                 towerRun = FindObjectOfType<TowerRunManager>();
+
+            HideStaticPlayer();
+
+            // 玩家对象由 NGO 的 NetworkConfig.PlayerPrefab 自动生成；这里的 playerPrefab 字段
+            // 仅作 Inspector 对照参考，若二者不一致会提示（避免误以为手动 SpawnPlayerFor 兜底）。
+            if (playerPrefab != null && networkManager.NetworkConfig.PlayerPrefab != playerPrefab.gameObject)
+                Debug.LogWarning("[NetBootstrap] playerPrefab 字段与 NetworkManager.PlayerPrefab 不一致。" +
+                                 "实际生效的是 NetworkManager.PlayerPrefab。");
 
             networkManager.OnClientConnectedCallback += OnClientConnected;
             GameSession.SetLocalPlayerId(NetworkSession.Instance.Account != null
@@ -213,33 +224,51 @@ namespace Tower.Netcode
                 : 0L;
         }
 
-        /// <summary>客户端连接成功 / 房主已有本地玩家的玩家生成入口。</summary>
+        /// <summary>
+        /// 客户端连接成功（含 host 自己在 StartHost 时的连接）。玩家对象由 NGO 的
+        /// <c>PlayerPrefab</c> 机制自动生成，这里只把它移到出生点（房间中心）。
+        /// 之所以不手动 Instantiate+SpawnAsPlayerObject：NetworkConfig.PlayerPrefab 已配置，
+        /// NGO 会在 Server 端自动为每个连接 Spawn owner 玩家，手动再生成会导致 host 出现双玩家。
+        /// </summary>
         private void OnClientConnected(ulong clientId)
         {
             if (networkManager == null || !networkManager.IsServer)
                 return;
 
-            // 阶段A：为每个连接生成一个归属它的玩家对象。
-            SpawnPlayerFor(clientId);
+            StartCoroutine(PlacePlayerAfterSpawn(clientId));
         }
 
-        /// <summary>为指定客户端生成一个玩家对象并归属给它。</summary>
-        private void SpawnPlayerFor(ulong clientId)
+        /// <summary>
+        /// 等到 clientId 对应玩家对象生成后，把它摆到客厅 / 房间出生点。
+        /// 自动生成的玩家对象初始位置是 prefab 原点，不会落在房间几何中心，需要摆一次。
+        /// </summary>
+        private System.Collections.IEnumerator PlacePlayerAfterSpawn(ulong clientId)
         {
-            if (playerPrefab == null)
+            GameObject born = null;
+            for (var i = 0; i < 5; i++)
             {
-                // 回退：假定场景已有静态玩家（单机支撑）。联机时顶层交给外部。
-                Debug.LogWarning("[NetBootstrap] 未配置玩家预制体，跳过动态生成。");
-                return;
+                yield return new WaitForEndOfFrame();
+                var netObj = networkManager.SpawnManager.GetPlayerNetworkObject(clientId);
+                if (netObj != null)
+                {
+                    born = netObj.gameObject;
+                    break;
+                }
             }
 
-            var instance = Instantiate(playerPrefab);
-            instance.transform.position = ResolveSpawnPosition();
-            var netObj = instance.GetComponent<NetworkObject>();
-            if (netObj != null)
-                netObj.SpawnAsPlayerObject(clientId);
-            else
-                Destroy(instance);
+            if (born == null)
+            {
+                Debug.LogWarning($"[NetBootstrap] 客户端 {clientId} 的玩家对象未在 5 帧内生成。");
+                yield break;
+            }
+
+            // 服务器端直接改位置；客户端由 PlayerNetworkSync 的 owner 上报覆盖，
+            // 因此这里只需在 host（服务器）上摆一次即可全局生效。
+            var target = ResolveSpawnPosition();
+            var body = born.GetComponent<Rigidbody2D>();
+            if (body != null)
+                body.position = target;
+            born.transform.position = new Vector3(target.x, target.y, born.transform.position.z);
         }
 
         private Vector2 ResolveSpawnPosition()
@@ -247,6 +276,38 @@ namespace Tower.Netcode
             if (towerRun != null && towerRun.HasRoomBounds)
                 return towerRun.FloorCenter;
             return Vector2.zero;
+        }
+
+        /// <summary>
+        /// 隐藏场景静态玩家。联机模式下所有角色都由 host 动态生成，静态玩家若继续存在会
+        /// 与网络玩家并存，出现「不归网络支配的幽灵角色」。隐藏它即可让联机世界只剩网络玩家。
+        /// 单机路径不会走到这里（Start 已按 IsOnlineSession 提前 return）。
+        /// </summary>
+        private void HideStaticPlayer()
+        {
+            if (staticPlayer != null)
+                return;
+
+            var gameplay = GameObject.Find("Gameplay");
+            staticPlayer = gameplay != null
+                ? gameplay.transform.Find("Character_Base")?.gameObject
+                : null;
+
+            if (staticPlayer != null)
+                staticPlayer.SetActive(false);
+        }
+
+        /// <summary>
+        /// 把相机跟随目标重定向到某个网络玩家。由本端 owner 玩家的 <see cref="PlayerNetworkSync"/>
+        /// 在 <c>OnNetworkSpawn</c> 时调用，使每端相机跟着自己控制的角色走。
+        /// 单机不受影响（<see cref="Instance"/> 只在联机 Bootstrap 激活时非空）。
+        /// </summary>
+        public void AttachLocalCamera(Transform player)
+        {
+            if (cameraFollow == null)
+                cameraFollow = FindObjectOfType<CameraFollow2D>();
+            if (cameraFollow != null && player != null)
+                cameraFollow.SetTarget(player);
         }
 
         private System.Collections.IEnumerator SelfCheck()
