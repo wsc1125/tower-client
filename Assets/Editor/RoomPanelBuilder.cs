@@ -59,6 +59,9 @@ public static class RoomPanelBuilder
     /// <summary>结果区按钮宽度（两个并排）。</summary>
     private static float ResultButtonWidth => (ContentWidth - 20f) * 0.5f;
 
+    /// <summary>成员条目里头像的尺寸。必须与 RoomPanelController.memberAvatarSize 一致。</summary>
+    private const float MemberAvatarSize = 72f;
+
     /// <summary>
     /// 人数档位。必须与 <see cref="RoomPanelController"/> 的 MaxPlayersOptions 一致 ——
     /// 顺序即索引，错位会导致「点 3 人却创建 4 人房间」。
@@ -248,26 +251,60 @@ public static class RoomPanelBuilder
         error.color = UiTokens.AccentWeapon;
         error.text = string.Empty;
 
-        // ---- 结果区（创建成功后展示房间码）----
+        // ---- 结果区（创建成功后展示房间码 + 成员列表）----
         // 与输入区**互斥显示**：创建成功后隐藏输入行，结果区占据同一块空间。
         // 若两者同时显示，结果区会被挤出面板外（内容区只有 602 高）。
-        var resultGroup = CreateRect("ResultGroup", body, new Vector2(ContentWidth, 380f),
-            new Vector2(InnerCenter.x, InnerCenter.y + 20f));
+        //
+        // 纵向布局自上而下：房间码 / 提示 / 成员列表 / 出发 / 复制+离开。
+        // 总高约 580，内容区 602，因此结果区直接撑满内容区，从顶部往下排。
+        var resultGroup = CreateRect("ResultGroup", body, new Vector2(ContentWidth, InnerSize.y),
+            InnerCenter);
+
+        // 结果区顶部（相对结果区中心）。
+        var resultTop = InnerSize.y * 0.5f;
 
         var resultCode = CreateText("RoomCode", resultGroup, new Vector2(ContentWidth, ResultCodeHeight),
-            new Vector2(0f, 190f - ResultCodeHeight * 0.5f), font, 64f);
+            new Vector2(0f, resultTop - ResultCodeHeight * 0.5f), font, 64f);
         resultCode.text = "--------";
         resultCode.color = UiTokens.AccentCyan;
         resultCode.characterSpacing = 8f;
 
         var resultHint = CreateText("Hint", resultGroup, new Vector2(ContentWidth, ResultHintHeight),
-            new Vector2(0f, 190f - ResultCodeHeight - 16f - ResultHintHeight * 0.5f), font, 22f);
+            new Vector2(0f, resultTop - ResultCodeHeight - 16f - ResultHintHeight * 0.5f), font, 22f);
         resultHint.text = "把房间码发给好友";
         resultHint.color = UiTokens.TextMuted;
 
+        // ---- 成员列表（头像 + 昵称）----
+        // 放在提示文字下方、出发按钮上方：玩家进房后第一眼就能看到谁在房里。
+        var memberListTop = resultTop - ResultCodeHeight - 16f - ResultHintHeight - 16f;
+        var memberListHeight = 200f;
+
+        var memberListRoot = CreateRect("MemberList", resultGroup, new Vector2(ContentWidth, memberListHeight),
+            new Vector2(0f, memberListTop - memberListHeight * 0.5f));
+
+        // 条目模板：横向「头像 + 昵称」，运行时克隆。模板本身隐藏。
+        var memberEntry = CreateRect("MemberEntryTemplate", memberListRoot,
+            new Vector2(ContentWidth, MemberAvatarSize), new Vector2(0f, -MemberAvatarSize * 0.5f));
+
+        var memberAvatar = CreateRect("Avatar", memberEntry,
+            new Vector2(MemberAvatarSize, MemberAvatarSize),
+            new Vector2(-ContentWidth * 0.5f + MemberAvatarSize * 0.5f + 8f, 0f));
+        var memberAvatarImage = memberAvatar.gameObject.AddComponent<Image>();
+        memberAvatarImage.color = UiTokens.SlotBackground;
+        memberAvatarImage.raycastTarget = false;
+
+        var memberName = CreateText("Name", memberEntry,
+            new Vector2(ContentWidth - MemberAvatarSize - 32f, MemberAvatarSize),
+            new Vector2(MemberAvatarSize * 0.5f + 16f, 0f), font, 30f);
+        memberName.text = "玩家";
+        memberName.color = Color.white;
+        memberName.alignment = TextAlignmentOptions.Left;
+
+        memberEntry.gameObject.SetActive(false);
+
         // 出发按钮：房主且人数 > 1 时可点，成员显示「等待房主出发」。
-        // 放在提示与复制/离开按钮之间，作为结果区最醒目的操作。
-        var departButtonY = 190f - ResultCodeHeight - 16f - ResultHintHeight - 20f - SubmitSize.y * 0.5f;
+        // 放在成员列表下方，作为结果区最醒目的操作。
+        var departButtonY = memberListTop - memberListHeight - 16f - SubmitSize.y * 0.5f;
 
         var departButton = CreateImageButton("DepartButton", resultGroup,
             new Vector2(0f, departButtonY), SubmitSize, LoadSprite(SpriteDir + "主按钮-普通.png"));
@@ -312,6 +349,7 @@ public static class RoomPanelBuilder
             joinPage.gameObject, roomCodeInput, joinSubmit, joinSubmitLabel,
             resultGroup.gameObject, resultCode, resultHint, copyButton, leaveButton,
             departButton, departLabel,
+            memberListRoot, memberEntry.gameObject,
             error, closeButton);
 
         // 默认隐藏，由 MainMenuRoomBinder 在切到联机模式时弹出。
@@ -386,6 +424,7 @@ public static class RoomPanelBuilder
         GameObject joinPage, TMP_InputField roomCodeInput, Button joinSubmit, TMP_Text joinSubmitLabel,
         GameObject resultGroup, TMP_Text resultCode, TMP_Text resultHint, Button copyButton, Button leaveButton,
         Button departButton, TMP_Text departLabel,
+        RectTransform memberListRoot, GameObject memberEntryTemplate,
         TMP_Text error, Button closeButton)
     {
         var serialized = new SerializedObject(controller);
@@ -411,6 +450,8 @@ public static class RoomPanelBuilder
         serialized.FindProperty("leaveButton").objectReferenceValue = leaveButton;
         serialized.FindProperty("departButton").objectReferenceValue = departButton;
         serialized.FindProperty("departLabel").objectReferenceValue = departLabel;
+        serialized.FindProperty("memberListRoot").objectReferenceValue = memberListRoot;
+        serialized.FindProperty("memberEntryTemplate").objectReferenceValue = memberEntryTemplate;
         serialized.FindProperty("errorText").objectReferenceValue = error;
         serialized.FindProperty("closeButton").objectReferenceValue = closeButton;
         serialized.ApplyModifiedPropertiesWithoutUndo();

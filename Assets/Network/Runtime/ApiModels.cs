@@ -80,6 +80,10 @@ namespace Tower.Network
     {
         public long account_id;
         public string display_name;
+
+        /// <summary>头像完整 URL。未设置头像时为空串。</summary>
+        public string avatar_url;
+
         public bool is_host;
         public string joined_at;
     }

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
 using UnityEngine.UI;
@@ -16,6 +17,20 @@ using UnityEngine.UI;
 [DisallowMultipleComponent]
 public sealed class RoomPanelController : MonoBehaviour
 {
+    /// <summary>
+    /// 成员展示数据。由 Binder 从 RoomDto 转换而来 ——
+    /// 本组件不引用 Network 程序集，因此不直接用 RoomMemberDto。
+    /// </summary>
+    public struct MemberView
+    {
+        public string DisplayName;
+        public bool IsHost;
+        public bool IsLocal;
+
+        /// <summary>头像贴图。未加载或加载失败时为 null，此时显示占位色块。</summary>
+        public Texture2D Avatar;
+    }
+
     [Header("面板")]
     [SerializeField] private GameObject panelRoot;
 
@@ -56,6 +71,19 @@ public sealed class RoomPanelController : MonoBehaviour
 
     [Tooltip("出发按钮上的文字。")]
     [SerializeField] private TMP_Text departLabel;
+
+    [Header("成员列表")]
+    [Tooltip("成员条目容器。条目按加入顺序纵向排列。")]
+    [SerializeField] private RectTransform memberListRoot;
+
+    [Tooltip("成员条目模板。运行时克隆，模板本身隐藏。")]
+    [SerializeField] private GameObject memberEntryTemplate;
+
+    [Tooltip("成员条目里头像的尺寸。")]
+    [SerializeField] private float memberAvatarSize = 72f;
+
+    [Tooltip("成员条目之间的纵向间距。")]
+    [SerializeField] private float memberEntrySpacing = 12f;
 
     [Header("通用")]
     [SerializeField] private TMP_Text errorText;
@@ -288,6 +316,94 @@ public sealed class RoomPanelController : MonoBehaviour
 
         if (joinTabHighlight != null)
             joinTabHighlight.gameObject.SetActive(visible && !isCreateTab);
+    }
+
+    /// <summary>
+    /// 刷新成员列表（头像 + 昵称 + 房主标记）。
+    ///
+    /// 每次全量重建而非增量更新：房间人数上限只有 4，
+    /// 重建成本可忽略，而增量更新要处理「谁进谁出」的差集，容易出错。
+    /// </summary>
+    public void SetMembers(IReadOnlyList<MemberView> members)
+    {
+        if (memberListRoot == null || memberEntryTemplate == null)
+            return;
+
+        // 清掉旧条目（模板本身保留，只隐藏）。
+        for (var i = memberListRoot.childCount - 1; i >= 0; i--)
+        {
+            var child = memberListRoot.GetChild(i).gameObject;
+            if (child == memberEntryTemplate)
+                continue;
+
+            Destroy(child);
+        }
+
+        memberEntryTemplate.SetActive(false);
+
+        if (members == null || members.Count == 0)
+            return;
+
+        var entryHeight = memberAvatarSize + memberEntrySpacing;
+
+        for (var i = 0; i < members.Count; i++)
+        {
+            var entry = Instantiate(memberEntryTemplate, memberListRoot);
+            entry.name = $"Member{i}";
+            entry.SetActive(true);
+
+            var rect = (RectTransform)entry.transform;
+            rect.anchorMin = new Vector2(0.5f, 1f);
+            rect.anchorMax = new Vector2(0.5f, 1f);
+            rect.pivot = new Vector2(0.5f, 1f);
+            rect.anchoredPosition = new Vector2(0f, -i * entryHeight);
+
+            ApplyMemberEntry(entry, members[i]);
+        }
+    }
+
+    /// <summary>把单个成员数据填进条目（头像 / 昵称 / 房主标记）。</summary>
+    private void ApplyMemberEntry(GameObject entry, MemberView member)
+    {
+        var avatarImage = FindChildComponent<Image>(entry.transform, "Avatar");
+        if (avatarImage != null)
+        {
+            if (member.Avatar != null)
+            {
+                avatarImage.sprite = Sprite.Create(
+                    member.Avatar,
+                    new Rect(0f, 0f, member.Avatar.width, member.Avatar.height),
+                    new Vector2(0.5f, 0.5f));
+                avatarImage.color = Color.white;
+            }
+            else
+            {
+                // 无头像时保留底图色块，避免条目塌陷成空白。
+                avatarImage.sprite = null;
+                avatarImage.color = inactiveColor;
+            }
+        }
+
+        var nameText = FindChildComponent<TMP_Text>(entry.transform, "Name");
+        if (nameText != null)
+        {
+            var suffix = member.IsHost ? "（房主）" : string.Empty;
+            var self = member.IsLocal ? "（我）" : string.Empty;
+            nameText.text = (member.DisplayName ?? "玩家") + suffix + self;
+            nameText.color = member.IsLocal ? accentColor : Color.white;
+        }
+    }
+
+    /// <summary>在子层级里按名字找组件（含未激活对象）。</summary>
+    private static T FindChildComponent<T>(Transform root, string name) where T : Component
+    {
+        foreach (var child in root.GetComponentsInChildren<Transform>(true))
+        {
+            if (child.name == name)
+                return child.GetComponent<T>();
+        }
+
+        return null;
     }
 
     // ---- 内部 ----

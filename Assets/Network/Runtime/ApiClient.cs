@@ -236,6 +236,36 @@ namespace Tower.Network
                 onSuccess, onError);
         }
 
+        // ---- 头像 ----
+
+        /// <summary>
+        /// 下载头像图片。url 为服务端下发的完整地址（avatar_url）。
+        ///
+        /// 失败时回调 null 而非报错：头像缺失只影响观感，
+        /// 不该让整个成员列表刷新流程中断。
+        /// </summary>
+        public IEnumerator DownloadAvatar(string url, Action<Texture2D> onDone)
+        {
+            if (string.IsNullOrEmpty(url))
+            {
+                onDone?.Invoke(null);
+                yield break;
+            }
+
+            using var request = UnityWebRequestTexture.GetTexture(url);
+            request.timeout = config.httpTimeoutSeconds;
+
+            yield return request.SendWebRequest();
+
+            if (request.result != UnityWebRequest.Result.Success)
+            {
+                onDone?.Invoke(null);
+                yield break;
+            }
+
+            onDone?.Invoke(DownloadHandlerTexture.GetContent(request));
+        }
+
         // ---- 内部实现 ----
 
         /// <summary>发送请求并反序列化响应体。</summary>

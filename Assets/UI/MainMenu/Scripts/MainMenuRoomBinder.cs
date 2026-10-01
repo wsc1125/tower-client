@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Collections.Generic;
 using Tower.Network;
 using UnityEngine;
 
@@ -76,6 +77,7 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
         {
             roomPanel?.ShowRoomCode(session.CurrentRoom.room_code);
             RefreshDepartState(session.CurrentRoom);
+            RefreshMembers(session.CurrentRoom);
         }
     }
 
@@ -276,6 +278,73 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
 
         roomPanel?.ShowRoomCode(room.room_code);
         RefreshDepartState(room);
+        RefreshMembers(room);
+    }
+
+    /// <summary>
+    /// 刷新房间成员列表（头像 + 昵称）。
+    ///
+    /// 头像需要异步下载，因此先立即用「无头像」的占位数据渲染一遍
+    /// （让玩家马上看到有人进来了），再逐个下载头像并回填。
+    /// </summary>
+    private void RefreshMembers(RoomDto room)
+    {
+        if (roomPanel == null)
+            return;
+
+        var members = room?.members;
+        if (members == null || members.Length == 0)
+        {
+            roomPanel.SetMembers(null);
+            return;
+        }
+
+        var localId = session?.Account?.account_id ?? 0;
+
+        var views = new List<RoomPanelController.MemberView>(members.Length);
+        foreach (var m in members)
+        {
+            if (m == null)
+                continue;
+
+            views.Add(new RoomPanelController.MemberView
+            {
+                DisplayName = m.display_name,
+                IsHost = m.is_host,
+                IsLocal = m.account_id == localId,
+                Avatar = null,
+            });
+        }
+
+        roomPanel.SetMembers(views);
+
+        // 头像异步补齐：下载完成后重建列表（人数上限 4，重建成本可忽略）。
+        StartCoroutine(LoadAvatarsRoutine(members, localId));
+    }
+
+    private IEnumerator LoadAvatarsRoutine(RoomMemberDto[] members, long localId)
+    {
+        var views = new List<RoomPanelController.MemberView>(members.Length);
+
+        foreach (var m in members)
+        {
+            if (m == null)
+                continue;
+
+            Texture2D avatar = null;
+            if (!string.IsNullOrEmpty(m.avatar_url) && session?.Api != null)
+                yield return session.Api.DownloadAvatar(m.avatar_url, tex => avatar = tex);
+
+            views.Add(new RoomPanelController.MemberView
+            {
+                DisplayName = m.display_name,
+                IsHost = m.is_host,
+                IsLocal = m.account_id == localId,
+                Avatar = avatar,
+            });
+        }
+
+        roomPanel?.SetMembers(views);
     }
 
     private void OnRoomLeft()

@@ -272,6 +272,7 @@ namespace Tower.Network
     {
         public long account_id;
         public string display_name;
+        public string avatar_url;
         public bool is_host;
         public bool ready;
     }
@@ -291,6 +292,7 @@ namespace Tower.Network
     {
         public long account_id;
         public string display_name;
+        public string avatar_url;
     }
 
     /// <summary>有玩家离开。</summary>

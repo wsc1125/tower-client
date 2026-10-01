@@ -303,6 +303,7 @@ namespace Tower.Network
                 {
                     account_id = m.account_id,
                     display_name = m.display_name,
+                    avatar_url = m.avatar_url,
                     is_host = m.is_host,
                 };
             }
@@ -372,6 +373,7 @@ namespace Tower.Network
                 {
                     account_id = payload.account_id,
                     display_name = payload.display_name,
+                    avatar_url = payload.avatar_url,
                     is_host = false,
                 };
                 CurrentRoom.members = merged;
