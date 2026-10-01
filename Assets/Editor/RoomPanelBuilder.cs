@@ -265,7 +265,18 @@ public static class RoomPanelBuilder
         resultHint.text = "把房间码发给好友";
         resultHint.color = UiTokens.TextMuted;
 
-        var resultButtonY = 190f - ResultCodeHeight - 16f - ResultHintHeight - 24f - ResultButtonHeight * 0.5f;
+        // 出发按钮：房主且人数 > 1 时可点，成员显示「等待房主出发」。
+        // 放在提示与复制/离开按钮之间，作为结果区最醒目的操作。
+        var departButtonY = 190f - ResultCodeHeight - 16f - ResultHintHeight - 20f - SubmitSize.y * 0.5f;
+
+        var departButton = CreateImageButton("DepartButton", resultGroup,
+            new Vector2(0f, departButtonY), SubmitSize, LoadSprite(SpriteDir + "主按钮-普通.png"));
+
+        var departLabel = CreateText("Label", departButton.transform, SubmitSize, Vector2.zero, font, 40f);
+        departLabel.text = "出发";
+        departLabel.color = Color.white;
+
+        var resultButtonY = departButtonY - SubmitSize.y * 0.5f - 20f - ResultButtonHeight * 0.5f;
 
         var copyButton = CreateImageButton("CopyButton", resultGroup,
             new Vector2(-ResultButtonWidth * 0.5f - 5f, resultButtonY),
@@ -300,6 +311,7 @@ public static class RoomPanelBuilder
             createPage.gameObject, roomNameInput, optionButtons, optionLabels, createSubmit, createSubmitLabel,
             joinPage.gameObject, roomCodeInput, joinSubmit, joinSubmitLabel,
             resultGroup.gameObject, resultCode, resultHint, copyButton, leaveButton,
+            departButton, departLabel,
             error, closeButton);
 
         // 默认隐藏，由 MainMenuRoomBinder 在切到联机模式时弹出。
@@ -337,7 +349,6 @@ public static class RoomPanelBuilder
             var serialized = new SerializedObject(binder);
             serialized.FindProperty("roomPanel").objectReferenceValue = panel;
             serialized.FindProperty("modeTab").objectReferenceValue = modeTab;
-            serialized.ApplyModifiedPropertiesWithoutUndo();
 
             // 把模式选择器与房间接线交给 DepartFlow，实现「单机直接出发 / 联机先进房」。
             var departFlow = contents.GetComponent<DepartFlow>();
@@ -347,11 +358,15 @@ public static class RoomPanelBuilder
             }
             else
             {
+                serialized.FindProperty("departFlow").objectReferenceValue = departFlow;
+
                 var flowSerialized = new SerializedObject(departFlow);
                 flowSerialized.FindProperty("modeTab").objectReferenceValue = modeTab;
                 flowSerialized.FindProperty("roomBinder").objectReferenceValue = binder;
                 flowSerialized.ApplyModifiedPropertiesWithoutUndo();
             }
+
+            serialized.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(contents, MenuPrefabPath);
             saved = true;
@@ -370,6 +385,7 @@ public static class RoomPanelBuilder
         Button createSubmit, TMP_Text createSubmitLabel,
         GameObject joinPage, TMP_InputField roomCodeInput, Button joinSubmit, TMP_Text joinSubmitLabel,
         GameObject resultGroup, TMP_Text resultCode, TMP_Text resultHint, Button copyButton, Button leaveButton,
+        Button departButton, TMP_Text departLabel,
         TMP_Text error, Button closeButton)
     {
         var serialized = new SerializedObject(controller);
@@ -393,6 +409,8 @@ public static class RoomPanelBuilder
         serialized.FindProperty("resultHintText").objectReferenceValue = resultHint;
         serialized.FindProperty("copyCodeButton").objectReferenceValue = copyButton;
         serialized.FindProperty("leaveButton").objectReferenceValue = leaveButton;
+        serialized.FindProperty("departButton").objectReferenceValue = departButton;
+        serialized.FindProperty("departLabel").objectReferenceValue = departLabel;
         serialized.FindProperty("errorText").objectReferenceValue = error;
         serialized.FindProperty("closeButton").objectReferenceValue = closeButton;
         serialized.ApplyModifiedPropertiesWithoutUndo();

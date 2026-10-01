@@ -21,6 +21,9 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
     [Tooltip("单机 / 联机模式选择器。用于判断当前是否联机模式。")]
     [SerializeField] private ModeTabSelector modeTab;
 
+    [Tooltip("出发流程。房主点出发 / 成员收到开始信号后，由它切场景。")]
+    [SerializeField] private DepartFlow departFlow;
+
     [Header("行为")]
     [Tooltip("切到联机模式时自动弹出房间面板。")]
     [SerializeField] private bool openOnOnlineMode = true;
@@ -35,11 +38,16 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
         if (modeTab == null)
             modeTab = GetComponentInChildren<ModeTabSelector>(true);
 
+        if (departFlow == null)
+            departFlow = GetComponent<DepartFlow>();
+
         if (roomPanel != null)
         {
             roomPanel.CreateRequested += OnCreateRequested;
             roomPanel.JoinRequested += OnJoinRequested;
             roomPanel.LeaveRequested += OnLeaveRequested;
+            roomPanel.DepartRequested += OnDepartRequested;
+            roomPanel.Closed += OnPanelClosed;
         }
 
         if (modeTab != null)
@@ -59,9 +67,16 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
         session.RoomChanged += OnRoomChanged;
         session.RoomLeft += OnRoomLeft;
 
+        // 成员端：房主发起开始游戏后，自动进入战斗场景。
+        if (session.Signal != null)
+            session.Signal.GameStarting += OnGameStarting;
+
         // 场景重载后若已在房间内（NetworkSession 跨场景常驻），直接展示房间码。
         if (session.CurrentRoom != null)
+        {
             roomPanel?.ShowRoomCode(session.CurrentRoom.room_code);
+            RefreshDepartState(session.CurrentRoom);
+        }
     }
 
     private void OnDestroy()
@@ -71,6 +86,8 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
             roomPanel.CreateRequested -= OnCreateRequested;
             roomPanel.JoinRequested -= OnJoinRequested;
             roomPanel.LeaveRequested -= OnLeaveRequested;
+            roomPanel.DepartRequested -= OnDepartRequested;
+            roomPanel.Closed -= OnPanelClosed;
         }
 
         if (modeTab != null)
@@ -80,6 +97,9 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
         {
             session.RoomChanged -= OnRoomChanged;
             session.RoomLeft -= OnRoomLeft;
+
+            if (session.Signal != null)
+                session.Signal.GameStarting -= OnGameStarting;
         }
     }
 
@@ -119,6 +139,79 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
             StartCoroutine(session.LeaveRoom(null, null));
 
         roomPanel?.Close();
+    }
+
+    /// <summary>房主点了「出发」：广播开始信号，并自己进入战斗场景。</summary>
+    private void OnDepartRequested()
+    {
+        if (session == null || session.CurrentRoom == null)
+            return;
+
+        // 仅房主可发起。
+        if (!IsLocalHost())
+        {
+            roomPanel?.ShowError("只有房主可以开始游戏");
+            return;
+        }
+
+        if (MemberCount() <= 1)
+        {
+            roomPanel?.ShowError("至少需要 2 名玩家才能开始");
+            return;
+        }
+
+        // 广播开始信号，成员端收到 GameStarting 后自动进场景。
+        session.Signal?.SendStartGame();
+
+        // 房主自己也进场景。
+        departFlow?.Depart();
+    }
+
+    /// <summary>成员端收到房主的开始信号：自动进入战斗场景。</summary>
+    private void OnGameStarting(GameStartingPayload payload)
+    {
+        // 房主自己已通过 Depart 进入，这里只处理成员端。
+        if (IsLocalHost())
+            return;
+
+        departFlow?.Depart();
+    }
+
+    /// <summary>本端是否为当前房间的房主。</summary>
+    private bool IsLocalHost()
+    {
+        if (session == null || session.CurrentRoom == null || session.Account == null)
+            return false;
+
+        return session.CurrentRoom.host_account == session.Account.account_id;
+    }
+
+    private int MemberCount()
+    {
+        var members = session != null && session.CurrentRoom != null ? session.CurrentRoom.members : null;
+        return members?.Length ?? 0;
+    }
+
+    /// <summary>按房间状态刷新出发按钮（仅房主 + 人数 > 1 可点）。</summary>
+    private void RefreshDepartState(RoomDto room)
+    {
+        if (roomPanel == null)
+            return;
+
+        var isHost = room != null && session != null && session.Account != null
+                     && room.host_account == session.Account.account_id;
+        var count = room?.members?.Length ?? 0;
+        roomPanel.SetDepartState(isHost, count);
+    }
+
+    /// <summary>
+    /// 房间面板被关闭：退出联机界面，模式选择器自动切回单机。
+    /// 切回单机会经 <see cref="OnModeChanged"/> 静默离开房间，避免留下幽灵成员。
+    /// </summary>
+    private void OnPanelClosed()
+    {
+        if (modeTab != null && modeTab.IsOnline)
+            modeTab.SetMode(ModeTabSelector.SingleMode);
     }
 
     private void OnCreateRequested(string roomName, int maxPlayers)
@@ -177,6 +270,7 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
             return;
 
         roomPanel?.ShowRoomCode(room.room_code);
+        RefreshDepartState(room);
     }
 
     private void OnRoomLeft()

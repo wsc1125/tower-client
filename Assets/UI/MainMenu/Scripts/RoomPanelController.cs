@@ -51,6 +51,12 @@ public sealed class RoomPanelController : MonoBehaviour
     [SerializeField] private Button copyCodeButton;
     [SerializeField] private Button leaveButton;
 
+    [Tooltip("出发按钮。仅房主、且房间人数大于 1 时可点击。")]
+    [SerializeField] private Button departButton;
+
+    [Tooltip("出发按钮上的文字。")]
+    [SerializeField] private TMP_Text departLabel;
+
     [Header("通用")]
     [SerializeField] private TMP_Text errorText;
     [SerializeField] private Button closeButton;
@@ -76,6 +82,9 @@ public sealed class RoomPanelController : MonoBehaviour
 
     /// <summary>请求离开当前房间。</summary>
     public event Action LeaveRequested;
+
+    /// <summary>房主请求出发（开始游戏）。</summary>
+    public event Action DepartRequested;
 
     /// <summary>面板关闭。</summary>
     public event Action Closed;
@@ -112,6 +121,9 @@ public sealed class RoomPanelController : MonoBehaviour
 
         if (leaveButton != null)
             leaveButton.onClick.AddListener(() => LeaveRequested?.Invoke());
+
+        if (departButton != null)
+            departButton.onClick.AddListener(() => DepartRequested?.Invoke());
 
         if (closeButton != null)
             closeButton.onClick.AddListener(Close);
@@ -229,6 +241,31 @@ public sealed class RoomPanelController : MonoBehaviour
             resultGroup.SetActive(false);
 
         SetInputAreaVisible(true);
+    }
+
+    /// <summary>
+    /// 刷新出发按钮状态。
+    /// 仅房主、且房间人数大于 1 时可点击；成员显示「等待房主出发」。
+    /// </summary>
+    /// <param name="isHost">本端是否为房主。</param>
+    /// <param name="memberCount">房间当前人数。</param>
+    public void SetDepartState(bool isHost, int memberCount)
+    {
+        if (departButton == null)
+            return;
+
+        var canDepart = isHost && memberCount > 1;
+        departButton.interactable = canDepart;
+
+        if (departLabel != null)
+        {
+            if (!isHost)
+                departLabel.text = "等待房主出发";
+            else if (memberCount <= 1)
+                departLabel.text = "等待队友加入";
+            else
+                departLabel.text = "出发";
+        }
     }
 
     /// <summary>显示 / 隐藏输入区（页签 + 两页内容）。</summary>
