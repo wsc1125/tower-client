@@ -14,6 +14,9 @@ public class PlayerMovement2D : MonoBehaviour
 
     public CharacterVisual2D Visual => visual;
 
+    /// <summary>当前绑定的虚拟摇杆。联机动态生成的玩家需要在运行时绑定场景摇杆。</summary>
+    public VirtualJoystickController Joystick => joystick;
+
     public static Vector2 ResolveMovementInput(Vector2 keyboardInput, Vector2 joystickInput)
     {
         return Vector2.ClampMagnitude(Vector2.ClampMagnitude(keyboardInput, 1f) + Vector2.ClampMagnitude(joystickInput, 1f), 1f);

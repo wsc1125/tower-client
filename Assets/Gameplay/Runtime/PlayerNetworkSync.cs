@@ -44,6 +44,15 @@ namespace Tower.Netcode
                 if (body != null)
                     body.isKinematic = false;
 
+                // 动态生成的玩家来自 prefab，其 PlayerMovement2D.joystick 未接线（摇杆在场景 HUDCanvas 内，
+                // 不在 prefab 里）。这里在运行时把场景摇杆绑给本地玩家，否则虚拟摇杆不响应。
+                if (movement != null && movement.Joystick == null)
+                {
+                    var joystick = FindObjectOfType<VirtualJoystickController>();
+                    if (joystick != null)
+                        movement.SetJoystick(joystick);
+                }
+
                 // 让相机跟着自己控制的角色走（联机 Bootstrap 激活时才有 Instance，单机为 null 无副作用）。
                 if (Tower.Netcode.NetworkGameBootstrap.Instance != null)
                     Tower.Netcode.NetworkGameBootstrap.Instance.AttachLocalCamera(transform);

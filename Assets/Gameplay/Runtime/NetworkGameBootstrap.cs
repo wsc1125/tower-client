@@ -68,7 +68,10 @@ namespace Tower.Netcode
         {
             // 单机：不启动网络，直接返回。
             if (!IsOnlineSession)
+            {
+                Debug.Log("[NetBootstrap] 非联机会话（未登录或未进房），跳过网络启动。");
                 return;
+            }
 
             if (networkManager == null)
                 networkManager = FindObjectOfType<NetworkManager>();
@@ -97,12 +100,43 @@ namespace Tower.Netcode
                 ? NetworkSession.Instance.Account.account_id.ToString()
                 : GameSession.LocalPlayerIdValue);
 
+            // 房间状态可能晚于场景加载就绪（信令 room_state 异步下发）。
+            // 先尝试一次；若房间还没到，订阅 RoomChanged 等它到齐再启动，避免误判房主。
+            if (NetworkSession.Instance.CurrentRoom != null)
+                TryStartNetwork();
+            else
+            {
+                Debug.Log("[NetBootstrap] 房间状态尚未就绪，等待 RoomChanged…");
+                NetworkSession.Instance.RoomChanged += OnRoomChanged;
+            }
+
+            StartCoroutine(SelfCheck());
+        }
+
+        private void OnRoomChanged(RoomDto room)
+        {
+            if (room == null || started)
+                return;
+
+            NetworkSession.Instance.RoomChanged -= OnRoomChanged;
+            TryStartNetwork();
+        }
+
+        /// <summary>房间状态就绪后，按房主/成员身份启动网络。</summary>
+        private void TryStartNetwork()
+        {
+            if (started)
+                return;
+
+            var room = NetworkSession.Instance.CurrentRoom;
+            var me = NetworkSession.Instance.Account != null ? NetworkSession.Instance.Account.account_id : 0L;
+            Debug.Log($"[NetBootstrap] 会话就绪：本端账号={me}，房间={room?.room_code}，房主账号={room?.host_account}，" +
+                      $"成员数={room?.members?.Length ?? 0}，判定为房主={IsRoomHostOrSole()}");
+
             if (IsRoomHostOrSole())
                 StartAsHost();
             else
                 WaitForHostAddress();
-
-            StartCoroutine(SelfCheck());
         }
 
         /// <summary>房主判定：房间状态里的 host_account == 本端账号。房间不可得时先当房主（单成员房间）。</summary>
