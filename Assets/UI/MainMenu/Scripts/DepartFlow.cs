@@ -54,8 +54,14 @@ public sealed class DepartFlow : MonoBehaviour
             return;
 
         // 联机模式：必须先建房或进房，否则只弹房间面板、不切场。
-        if (IsOnlineMode && roomBinder != null && !roomBinder.EnsureReadyForDepart())
+        // 联机切场由 MultiplayerCoordinator 在连接建立后统一发起，这里不自行加载场景。
+        if (IsOnlineMode)
+        {
+            if (roomBinder != null && !roomBinder.EnsureReadyForDepart())
+                return;
+
             return;
+        }
 
         if (!Application.CanStreamedLevelBeLoaded(targetSceneName))
         {

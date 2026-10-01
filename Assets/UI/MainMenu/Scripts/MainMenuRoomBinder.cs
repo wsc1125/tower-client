@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using Tower.Netcode;
 using Tower.Network;
 using UnityEngine;
 
@@ -53,6 +54,10 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
 
         if (modeTab != null)
             modeTab.ModeChanged += OnModeChanged;
+
+        // 联机失败时留在房间界面显示原因，不进入战斗。
+        if (MultiplayerCoordinator.Instance != null)
+            MultiplayerCoordinator.Instance.Failed += OnMultiplayerFailed;
     }
 
     private void Start()
@@ -94,6 +99,9 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
 
         if (modeTab != null)
             modeTab.ModeChanged -= OnModeChanged;
+
+        if (MultiplayerCoordinator.Instance != null)
+            MultiplayerCoordinator.Instance.Failed -= OnMultiplayerFailed;
 
         if (session != null)
         {
@@ -143,7 +151,7 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
         roomPanel?.Close();
     }
 
-    /// <summary>房主点了「出发」：广播开始信号，并自己进入战斗场景。</summary>
+    /// <summary>房主点了「出发」：启动联机协调器，由它建立连接并统一切场。</summary>
     private void OnDepartRequested()
     {
         if (session == null || session.CurrentRoom == null)
@@ -162,21 +170,41 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
             return;
         }
 
-        // 广播开始信号，成员端收到 GameStarting 后自动进场景。
+        var coordinator = MultiplayerCoordinator.Instance;
+        if (coordinator == null)
+        {
+            roomPanel?.ShowError("联机组件未就绪");
+            return;
+        }
+
+        // 广播开始信号，成员端收到 GameStarting 后启动 Client。
         session.Signal?.SendStartGame();
 
-        // 房主自己也进场景。
-        departFlow?.Depart();
+        // 房主启动 Host 流程：创建会话 → 监听 → 等成员 → 切场景。
+        StartCoroutine(coordinator.StartHostFlow());
     }
 
-    /// <summary>成员端收到房主的开始信号：自动进入战斗场景。</summary>
+    /// <summary>成员端收到房主的开始信号：启动 Client 流程，等待房主切场景。</summary>
     private void OnGameStarting(GameStartingPayload payload)
     {
-        // 房主自己已通过 Depart 进入，这里只处理成员端。
+        // 房主自己已通过 StartHostFlow 进入，这里只处理成员端。
         if (IsLocalHost())
             return;
 
-        departFlow?.Depart();
+        var coordinator = MultiplayerCoordinator.Instance;
+        if (coordinator == null)
+        {
+            roomPanel?.ShowError("联机组件未就绪");
+            return;
+        }
+
+        StartCoroutine(coordinator.StartClientFlow());
+    }
+
+    /// <summary>联机失败：留在房间界面并显示原因，不进入战斗。</summary>
+    private void OnMultiplayerFailed(string reason)
+    {
+        roomPanel?.ShowError(reason);
     }
 
     /// <summary>本端是否为当前房间的房主。</summary>
