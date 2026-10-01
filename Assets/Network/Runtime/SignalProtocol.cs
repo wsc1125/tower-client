@@ -18,6 +18,7 @@ namespace Tower.Network
         public const string MemberJoined = "member_joined";
         public const string MemberLeft = "member_left";
         public const string GameStarting = "game_starting";
+        public const string GameSession = "game_session";
         public const string HostChanged = "host_changed";
         public const string RoomClosed = "room_closed";
         public const string Error = "error";
@@ -315,6 +316,20 @@ namespace Tower.Network
     public sealed class GameStartingPayload
     {
         public long host_account_id;
+        public string session_id;
+    }
+
+    /// <summary>本局游戏会话信息。</summary>
+    [Serializable]
+    public sealed class GameSessionPayload
+    {
+        public string session_id;
+        public string room_code;
+        public string transport_mode;
+        public long host_account_id;
+        public string host_address;
+        public int host_port;
+        public string status;
     }
 
     /// <summary>房主迁移。客户端收到后需执行权威接管。</summary>

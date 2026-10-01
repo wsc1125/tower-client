@@ -169,4 +169,25 @@ namespace Tower.Network
         public string code;
         public string message;
     }
+
+    /// <summary>本局游戏会话。对应服务端 room.GameSession。</summary>
+    [Serializable]
+    public sealed class GameSessionDto
+    {
+        public string session_id;
+        public string room_code;
+        public string transport_mode;
+        public long host_account_id;
+        public string host_address;
+        public int host_port;
+        public string status;
+    }
+
+    /// <summary>标记会话就绪请求。</summary>
+    [Serializable]
+    public sealed class SessionReadyRequestDto
+    {
+        public string host_address;
+        public int host_port;
+    }
 }
