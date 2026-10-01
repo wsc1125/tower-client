@@ -355,6 +355,28 @@ namespace Tower.Network
                 return;
 
             Debug.Log($"[NetworkSession] 玩家加入: {payload.display_name} (#{payload.account_id})");
+
+            // 把新成员并入 CurrentRoom.members：房主据此遍历广播房主地址，
+            // 否则后加入的成员不在列表里，收不到地址、连不上房主。
+            if (CurrentRoom != null && CurrentRoom.members != null)
+            {
+                foreach (var m in CurrentRoom.members)
+                {
+                    if (m != null && m.account_id == payload.account_id)
+                        return;
+                }
+
+                var merged = new RoomMemberDto[CurrentRoom.members.Length + 1];
+                System.Array.Copy(CurrentRoom.members, merged, CurrentRoom.members.Length);
+                merged[merged.Length - 1] = new RoomMemberDto
+                {
+                    account_id = payload.account_id,
+                    display_name = payload.display_name,
+                    is_host = false,
+                };
+                CurrentRoom.members = merged;
+                RoomChanged?.Invoke(CurrentRoom);
+            }
         }
 
         private void OnMemberLeft(MemberLeftPayload payload)

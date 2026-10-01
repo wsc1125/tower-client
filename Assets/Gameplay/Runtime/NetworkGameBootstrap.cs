@@ -165,7 +165,11 @@ namespace Tower.Netcode
             // 订阅成员加入事件，每有新成员进房就补发一次房主地址。
             var signal = NetworkSession.Instance != null ? NetworkSession.Instance.Signal : null;
             if (signal != null)
+            {
                 signal.MemberJoined += OnMemberJoinedBroadcast;
+                // 成员进场景后会主动请求地址，房主需应答。
+                signal.SignalReceived += OnRemoteSignal;
+            }
         }
 
         /// <summary>有成员加入房间时，补发房主地址（解决后加入者收不到首次广播的时序问题）。</summary>
@@ -194,8 +198,20 @@ namespace Tower.Netcode
         {
             Debug.Log("[NetBootstrap] 作为成员，等待房主地址…");
             var signal = NetworkSession.Instance != null ? NetworkSession.Instance.Signal : null;
-            if (signal != null)
-                signal.SignalReceived += OnRemoteSignal;
+            if (signal == null)
+                return;
+
+            signal.SignalReceived += OnRemoteSignal;
+
+            // 主动向房主请求地址：房主可能在本端进场景前就已广播过，被动等待会错过。
+            var hostId = NetworkSession.Instance.CurrentRoom != null
+                ? NetworkSession.Instance.CurrentRoom.host_account
+                : 0L;
+            if (hostId != 0L && hostId != SelfAccountId())
+            {
+                Debug.Log($"[NetBootstrap] 向房主 #{hostId} 请求地址");
+                signal.SendSignal(hostId, connectSignalPrefix + "_req");
+            }
         }
 
         private void OnRemoteSignal(SignalForwardPayload payload)
@@ -203,17 +219,27 @@ namespace Tower.Netcode
             if (payload == null || string.IsNullOrEmpty(payload.data))
                 return;
 
+            // 房主收到成员的地址请求 → 回复自己的地址。
+            if (payload.data == connectSignalPrefix + "_req")
+            {
+                if (IsHost)
+                {
+                    var signal = NetworkSession.Instance != null ? NetworkSession.Instance.Signal : null;
+                    signal?.SendSignal(payload.from_account_id, connectSignalPrefix + ":" + LocalAddress());
+                }
+                return;
+            }
+
             if (!payload.data.StartsWith(connectSignalPrefix + ":"))
                 return;
 
             receivedHostAddress = payload.data.Substring(connectSignalPrefix.Length + 1);
             Debug.Log($"[NetBootstrap] 收到房主地址 {receivedHostAddress}");
 
-            var signal = NetworkSession.Instance != null ? NetworkSession.Instance.Signal : null;
-            if (signal != null)
-                signal.SignalReceived -= OnRemoteSignal;
+            var sig = NetworkSession.Instance != null ? NetworkSession.Instance.Signal : null;
+            if (sig != null)
+                sig.SignalReceived -= OnRemoteSignal;
 
-            // 部署联机：主编辑器 host → 成员连入即马上 StartClient，避免等待竞技场生成。
             StartAsClient(receivedHostAddress);
         }
 
