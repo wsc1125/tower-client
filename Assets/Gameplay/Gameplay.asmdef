@@ -3,7 +3,10 @@
   "rootNamespace": "",
   "references": [
     "BattleHUD",
-    "Inventory"
+    "Inventory",
+    "Network",
+    "Unity.Netcode.Runtime",
+    "Unity.Netcode.Components"
   ],
   "includePlatforms": [],
   "excludePlatforms": [],
