@@ -18,6 +18,8 @@ public static class GameSession
 
     private static ItemDatabase database;
     private static bool initialized;
+    private static ItemDefinition[] startingEquipment;
+    private static readonly HashSet<string> loadedPlayers = new HashSet<string>();
 
     /// <summary>
     /// 本机玩家标识。单机下恒为 <see cref="LocalPlayerId"/>；
@@ -62,7 +64,17 @@ public static class GameSession
     /// </summary>
     public static void SetLocalPlayerId(string playerId)
     {
-        localPlayerId = string.IsNullOrWhiteSpace(playerId) ? LocalPlayerId : playerId;
+        var nextId = string.IsNullOrWhiteSpace(playerId) ? LocalPlayerId : playerId;
+        if (nextId == localPlayerId)
+            return;
+
+        if (initialized && loadedPlayers.Contains(localPlayerId))
+            Persist();
+        localPlayerId = nextId;
+        if (initialized)
+            InitializePlayer(nextId);
+        LoadoutChanged?.Invoke();
+        RaidChanged?.Invoke();
     }
 
     /// <summary>本机当前绑定的玩家标识。</summary>
@@ -76,6 +88,12 @@ public static class GameSession
 
     /// <summary>是否已经初始化过（用于判断是否需要注入初始装备）。</summary>
     public static bool Initialized => initialized;
+
+    /// <summary>
+    /// 物品登记表。供联机客户端按物品 ID 反查定义（掉落物同步只传 ID，不传资产引用）。
+    /// 未初始化时为 null。
+    /// </summary>
+    public static ItemDatabase Database => database;
 
     /// <summary>局外数据发生变化时触发，供存档与 UI 订阅。</summary>
     public static event Action LoadoutChanged;
@@ -99,26 +117,12 @@ public static class GameSession
 
         initialized = true;
         database = itemDatabase;
+        startingEquipment = initialEquipment;
 
         if (itemDatabase == null)
             Debug.LogError("[GameSession] 未指定 ItemDatabase，已保存的物品将无法还原。");
 
-        // 先确保两个容器已创建并接好事件，再决定是否从存档还原。
-        var target = Loadout;
-        var bag = Raid;
-
-        if (PlayerSaveStore.HasSave)
-        {
-            PlayerSaveStore.Apply(PlayerSaveStore.Load(), target, itemDatabase);
-        }
-        else
-        {
-            ApplyInitialEquipment(initialEquipment);
-            PlayerSaveStore.Save(target);
-            PlayerSaveStore.Flush();
-        }
-
-        bag.NotifyChanged();
+        InitializePlayer(localPlayerId);
     }
 
     /// <summary>
@@ -127,7 +131,7 @@ public static class GameSession
     /// </summary>
     public static void BeginRaid()
     {
-        LoadoutService.DeployToRaid(Loadout, Raid);
+        LoadoutService.DeployToRaid(LocalPlayer.Loadout, LocalPlayer.Raid);
     }
 
     /// <summary>
@@ -137,10 +141,11 @@ public static class GameSession
     public static int ExtractRaid()
     {
         // 收藏结算：只算本局拾取的战利品，不含带入地牢的初始装备。
-        CollectionService.RecordRaidLoot(Raid.Loot);
+        var player = LocalPlayer;
+        CollectionService.RecordRaidLoot(player.Raid.Loot);
 
-        var overflow = LoadoutService.ExtractToLoadout(Raid, Loadout);
-        PlayerSaveStore.Save(Loadout);
+        var overflow = LoadoutService.ExtractToLoadout(player.Raid, player.Loadout);
+        PlayerSaveStore.Save(player.Loadout, localPlayerId);
         PlayerSaveStore.Flush();
         return overflow;
     }
@@ -153,16 +158,17 @@ public static class GameSession
     /// </summary>
     public static void AbandonRaid()
     {
-        Raid.ClearAll();
-        Loadout.Equipment.Clear();
-        Raid.NotifyChanged();
-        Loadout.NotifyChanged();
+        var player = LocalPlayer;
+        player.Raid.ClearAll();
+        player.Loadout.Equipment.Clear();
+        player.Raid.NotifyChanged();
+        player.Loadout.NotifyChanged();
     }
 
     /// <summary>把当前局外数据落盘。</summary>
     public static void Persist()
     {
-        PlayerSaveStore.Save(Loadout);
+        PlayerSaveStore.Save(LocalPlayer.Loadout, localPlayerId);
         PlayerSaveStore.Flush();
     }
 
@@ -170,10 +176,10 @@ public static class GameSession
     public static void ResetAll()
     {
         // ClearAll 不触发 Changed，因此不会把空数据提前写回存档。
-        var target = Loadout;
-        target.ClearAll();
-        Raid.ClearAll();
-        PlayerSaveStore.Delete();
+        var player = LocalPlayer;
+        player.Loadout.ClearAll();
+        player.Raid.ClearAll();
+        PlayerSaveStore.Delete(localPlayerId);
 
         LoadoutChanged?.Invoke();
         RaidChanged?.Invoke();
@@ -184,14 +190,34 @@ public static class GameSession
     {
         // 容器在创建时已接上事件，这里只需清空玩家上下文即可（旧对象随之被回收）。
         players.Clear();
+        loadedPlayers.Clear();
         database = null;
+        startingEquipment = null;
         initialized = false;
         localPlayerId = LocalPlayerId;
         LoadoutChanged = null;
         RaidChanged = null;
     }
 
-    private static void ApplyInitialEquipment(ItemDefinition[] initialEquipment)
+    private static void InitializePlayer(string playerId)
+    {
+        if (!loadedPlayers.Add(playerId))
+            return;
+
+        var player = GetPlayer(playerId);
+        if (PlayerSaveStore.HasSaveFor(playerId))
+            PlayerSaveStore.Apply(PlayerSaveStore.Load(playerId), player.Loadout, database);
+        else
+        {
+            ApplyInitialEquipment(player.Loadout, startingEquipment);
+            PlayerSaveStore.Save(player.Loadout, playerId);
+            PlayerSaveStore.Flush();
+        }
+
+        player.Raid.NotifyChanged();
+    }
+
+    private static void ApplyInitialEquipment(PlayerLoadout target, ItemDefinition[] initialEquipment)
     {
         if (initialEquipment == null)
             return;
@@ -207,23 +233,27 @@ public static class GameSession
                 continue;
             }
 
-            Loadout.Equipment.Set(item.EquipSlotType, ItemInstance.Create(item));
+            target.Equipment.Set(item.EquipSlotType, ItemInstance.Create(item));
         }
     }
 
     private static void HandleLoadoutChanged(IPlayerContext context)
     {
-        if (context.PlayerId == LocalPlayerId)
+        if (initialized && loadedPlayers.Contains(context.PlayerId) && context.PlayerId == localPlayerId)
         {
-            PlayerSaveStore.Save(context.Loadout);
+            PlayerSaveStore.Save(context.Loadout, context.PlayerId);
             PlayerSaveStore.Flush();
+        }
+
+        if (context.PlayerId == localPlayerId)
+        {
             LoadoutChanged?.Invoke();
         }
     }
 
     private static void HandleRaidChanged(IPlayerContext context)
     {
-        if (context.PlayerId == LocalPlayerId)
+        if (context.PlayerId == localPlayerId)
             RaidChanged?.Invoke();
     }
 }

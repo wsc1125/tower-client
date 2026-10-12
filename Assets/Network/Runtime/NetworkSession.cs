@@ -21,6 +21,18 @@ namespace Tower.Network
         /// <summary>全局单例。未挂载时返回 null。</summary>
         public static NetworkSession Instance => instance;
 
+        /// <summary>
+        /// 会话就绪（Awake 完成、信令事件已挂载）。
+        ///
+        /// 用**静态**事件而非实例事件：订阅方（如 MultiplayerCoordinator）可能在
+        /// 本组件 Awake 之前就执行，此时 Instance 仍为 null，无法访问实例事件。
+        /// 静态事件让订阅方在「会话尚未就绪」时也能可靠挂载，消除 Awake 顺序依赖。
+        /// </summary>
+        public static event Action ReadyStatic;
+
+        /// <summary>会话是否已就绪。</summary>
+        public bool IsReady { get; private set; }
+
         [Tooltip("服务端地址。本地开发用 localhost；局域网测试填主机内网 IP。")]
         [SerializeField] private string serverHost = "localhost";
 
@@ -46,9 +58,6 @@ namespace Tower.Network
         /// <summary>当前所在房间。未加入时为 null。</summary>
         public RoomDto CurrentRoom { get; private set; }
 
-        /// <summary>当前本局游戏会话。未创建时为 null。</summary>
-        public GameSessionDto CurrentSession { get; private set; }
-
         /// <summary>登录成功。</summary>
         public event Action<AccountDto> LoggedIn;
 
@@ -61,8 +70,22 @@ namespace Tower.Network
         /// <summary>已离开房间。</summary>
         public event Action RoomLeft;
 
-        /// <summary>本局游戏会话变化（创建 / 就绪 / 关闭）。</summary>
-        public event Action<GameSessionDto> SessionChanged;
+        /// <summary>
+        /// 房主迁移。参数为新房主账号 ID。
+        ///
+        /// 与 <see cref="RoomChanged"/> 分开：房主迁移需要 UI 做额外提示
+        /// （「你已成为房主」/「房主已变更」），而普通成员进出不需要。
+        /// </summary>
+        public event Action<long> HostChanged;
+
+        /// <summary>
+        /// 房主离开了房间（且本端不是房主）。
+        ///
+        /// 与 <see cref="HostChanged"/> 区分：服务端在房主离开后会把房主移交给
+        /// 最早加入的成员并广播 host_changed，但 NGO 的 Host 是网络拓扑中心，
+        /// 无法迁移 —— 因此战斗中房主离开即会话解散，由 Gameplay 侧据此退出。
+        /// </summary>
+        public event Action HostLeft;
 
         private void Awake()
         {
@@ -80,6 +103,10 @@ namespace Tower.Network
             signal = new SignalClient(config);
 
             HookSignalEvents();
+
+            // 就绪：通知在 Awake 之前就等待的订阅方（如 MultiplayerCoordinator）。
+            IsReady = true;
+            ReadyStatic?.Invoke();
         }
 
         private void OnDestroy()
@@ -87,6 +114,7 @@ namespace Tower.Network
             if (instance == this)
                 instance = null;
 
+            IsReady = false;
             UnhookSignalEvents();
         }
 
@@ -200,7 +228,6 @@ namespace Tower.Network
             ApiError failure = null;
             yield return api.LeaveRoom(code, _ => { }, error => failure = error);
 
-            CurrentSession = null;
             CurrentRoom = null;
             RoomLeft?.Invoke();
 
@@ -227,7 +254,6 @@ namespace Tower.Network
             ApiError failure = null;
             yield return api.CloseRoom(code, () => { }, error => failure = error);
 
-            CurrentSession = null;
             CurrentRoom = null;
             RoomLeft?.Invoke();
 
@@ -243,117 +269,59 @@ namespace Tower.Network
             return api.ListRooms(onSuccess, onError);
         }
 
-        // ---- 游戏会话 ----
-
-        /// <summary>房主创建本局游戏会话。</summary>
-        public IEnumerator CreateSession(Action<GameSessionDto> onSuccess, Action<ApiError> onError)
+        /// <summary>
+        /// 退出当前房间：房主关闭房间，成员离开房间。
+        ///
+        /// 供「死亡 / 撤退回主菜单」等场景调用 —— 这些路径只切场景不退出房间，
+        /// 会让服务端仍认为玩家在房间内，导致下次建房/进房报「你已在其他房间中」，
+        /// 以及 UI 显示「仍在房间中」的幽灵房间问题。
+        /// </summary>
+        public IEnumerator LeaveOrCloseRoom(Action onDone)
         {
             if (CurrentRoom == null)
             {
-                onError?.Invoke(new ApiError("ROOM_NOT_FOUND", "当前不在房间内"));
+                onDone?.Invoke();
                 yield break;
             }
 
-            GameSessionDto created = null;
-            ApiError failure = null;
+            var isHost = Account != null && CurrentRoom.host_account == Account.account_id;
 
-            yield return api.CreateSession(CurrentRoom.room_code,
-                session => created = session,
-                error => failure = error);
+            if (isHost)
+                yield return CloseRoom(null, null);
+            else
+                yield return LeaveRoom(null, null);
 
-            if (failure != null)
-            {
-                onError?.Invoke(failure);
-                yield break;
-            }
-
-            CurrentSession = created;
-            SessionChanged?.Invoke(CurrentSession);
-            onSuccess?.Invoke(created);
-        }
-
-        /// <summary>查询房间当前会话（成员补齐错过的推送）。</summary>
-        public IEnumerator FetchSession(Action<GameSessionDto> onSuccess, Action<ApiError> onError)
-        {
-            if (CurrentRoom == null)
-            {
-                onError?.Invoke(new ApiError("ROOM_NOT_FOUND", "当前不在房间内"));
-                yield break;
-            }
-
-            GameSessionDto fetched = null;
-            ApiError failure = null;
-
-            yield return api.GetSession(CurrentRoom.room_code,
-                session => fetched = session,
-                error => failure = error);
-
-            if (failure != null)
-            {
-                onError?.Invoke(failure);
-                yield break;
-            }
-
-            CurrentSession = fetched;
-            SessionChanged?.Invoke(CurrentSession);
-            onSuccess?.Invoke(fetched);
-        }
-
-        /// <summary>房主写入连接地址，标记会话可连接。</summary>
-        public IEnumerator MarkSessionReady(string hostAddress, int hostPort,
-            Action<GameSessionDto> onSuccess, Action<ApiError> onError)
-        {
-            if (CurrentRoom == null)
-            {
-                onError?.Invoke(new ApiError("ROOM_NOT_FOUND", "当前不在房间内"));
-                yield break;
-            }
-
-            GameSessionDto ready = null;
-            ApiError failure = null;
-
-            yield return api.MarkSessionReady(CurrentRoom.room_code, hostAddress, hostPort,
-                session => ready = session,
-                error => failure = error);
-
-            if (failure != null)
-            {
-                onError?.Invoke(failure);
-                yield break;
-            }
-
-            CurrentSession = ready;
-            SessionChanged?.Invoke(CurrentSession);
-            onSuccess?.Invoke(ready);
-        }
-
-        /// <summary>房主结束本局会话。</summary>
-        public IEnumerator CloseSession(Action onSuccess, Action<ApiError> onError)
-        {
-            if (CurrentRoom == null)
-            {
-                onSuccess?.Invoke();
-                yield break;
-            }
-
-            ApiError failure = null;
-            yield return api.CloseSession(CurrentRoom.room_code, () => { }, error => failure = error);
-
-            if (failure != null)
-            {
-                onError?.Invoke(failure);
-                yield break;
-            }
-
-            CurrentSession = null;
-            SessionChanged?.Invoke(null);
-            onSuccess?.Invoke();
+            onDone?.Invoke();
         }
 
         /// <summary>获取中继凭证。</summary>
         public IEnumerator GetRelayCredentials(Action<RelayCredentialsDto> onSuccess, Action<ApiError> onError)
         {
             return api.GetRelayCredentials(onSuccess, onError);
+        }
+
+        /// <summary>
+        /// 提交本局撤离战利品清单。未登录时静默跳过（单机不调用）。
+        /// </summary>
+        public IEnumerator SubmitExtraction(ExtractionRequestDto body,
+            Action onSuccess, Action<ApiError> onError)
+        {
+            if (api == null || !api.IsLoggedIn)
+            {
+                onSuccess?.Invoke();
+                yield break;
+            }
+
+            yield return api.SubmitExtraction(body, onSuccess, onError);
+        }
+
+        /// <summary>
+        /// 标记本端准备状态。服务端会广播完整房间状态，各端据此刷新「已准备」显示。
+        /// 房主不需要准备（房主点出发即开始），因此只由成员调用。
+        /// </summary>
+        public void SetReady(bool ready)
+        {
+            signal?.SendReady(ready);
         }
 
         /// <summary>连接信令并等待房间状态下发。</summary>
@@ -420,6 +388,7 @@ namespace Tower.Network
                     display_name = m.display_name,
                     avatar_url = m.avatar_url,
                     is_host = m.is_host,
+                    ready = m.ready,
                 };
             }
 
@@ -442,7 +411,8 @@ namespace Tower.Network
             signal.MemberLeft += OnMemberLeft;
             signal.HostChanged += OnHostChanged;
             signal.RoomClosed += OnRoomClosed;
-            signal.GameSessionReceived += OnGameSessionReceived;
+            signal.Disconnected += OnSignalDisconnected;
+            signal.SignalReceived += OnSignalForwarded;
         }
 
         private void UnhookSignalEvents()
@@ -455,7 +425,49 @@ namespace Tower.Network
             signal.MemberLeft -= OnMemberLeft;
             signal.HostChanged -= OnHostChanged;
             signal.RoomClosed -= OnRoomClosed;
-            signal.GameSessionReceived -= OnGameSessionReceived;
+            signal.Disconnected -= OnSignalDisconnected;
+            signal.SignalReceived -= OnSignalForwarded;
+        }
+
+        /// <summary>
+        /// 收到转发的信令数据（来自房间内其他玩家）。
+        ///
+        /// 只做透传，不解析内容：Network 程序集不引用 Gameplay，
+        /// 由 Gameplay 侧的 MultiplayerCoordinator 订阅本事件解析房主地址。
+        /// </summary>
+        public event Action<long, string> SignalForwarded;
+
+        /// <summary>
+        /// 收到转发的信令数据：透传给 Gameplay 侧的订阅者。
+        ///
+        /// 用事件转发而非让协调器直接订阅 SignalClient：
+        /// 协调器在 Gameplay 程序集，SignalClient 在 Network 程序集，
+        /// 由 NetworkSession 做这层桥接，避免两个程序集互相引用。
+        /// </summary>
+        private void OnSignalForwarded(SignalForwardPayload payload)
+        {
+            if (payload == null)
+                return;
+
+            SignalForwarded?.Invoke(payload.from_account_id, payload.data);
+        }
+
+        /// <summary>
+        /// 信令连接断开：清空房间状态。
+        ///
+        /// 这是「幽灵房间」的兜底防线：连接已断，服务端那边成员已被移除，
+        /// 本地若继续保留 CurrentRoom，UI 会显示「仍在房间中」，
+        /// 且下次建房/进房会被服务端以「你已在其他房间中」拒绝。
+        /// </summary>
+        private void OnSignalDisconnected(string reason)
+        {
+            if (CurrentRoom == null)
+                return;
+
+            Debug.Log($"[NetworkSession] 信令断开（{reason}），清空房间状态");
+
+            CurrentRoom = null;
+            RoomLeft?.Invoke();
         }
 
         private void OnRoomState(RoomStatePayload state)
@@ -504,6 +516,32 @@ namespace Tower.Network
                 return;
 
             Debug.Log($"[NetworkSession] 玩家离开: #{payload.account_id}");
+
+            // 离开的是房主，且本端不是房主：NGO 的 Host 无法迁移，会话解散。
+            // 必须在移除成员前判断，否则 host_account 已被服务端改写。
+            var wasHost = CurrentRoom != null && CurrentRoom.host_account == payload.account_id;
+            var selfIsHost = Account != null && CurrentRoom != null && CurrentRoom.host_account == Account.account_id;
+
+            // 从 CurrentRoom.members 移除该成员并通知 UI。
+            // 只打日志不更新列表的话，别人离开后本地仍显示旧成员（幽灵成员）。
+            if (CurrentRoom == null || CurrentRoom.members == null)
+                return;
+
+            var kept = new System.Collections.Generic.List<RoomMemberDto>(CurrentRoom.members.Length);
+            foreach (var m in CurrentRoom.members)
+            {
+                if (m != null && m.account_id != payload.account_id)
+                    kept.Add(m);
+            }
+
+            if (kept.Count == CurrentRoom.members.Length)
+                return;
+
+            CurrentRoom.members = kept.ToArray();
+            RoomChanged?.Invoke(CurrentRoom);
+
+            if (wasHost && !selfIsHost)
+                HostLeft?.Invoke();
         }
 
         private void OnHostChanged(HostChangedPayload payload)
@@ -520,6 +558,8 @@ namespace Tower.Network
                 CurrentRoom.host_account = payload.new_host_account_id;
                 RoomChanged?.Invoke(CurrentRoom);
             }
+
+            HostChanged?.Invoke(payload.new_host_account_id);
         }
 
         private void OnRoomClosed(RoomClosedPayload payload)
@@ -528,29 +568,6 @@ namespace Tower.Network
 
             CurrentRoom = null;
             RoomLeft?.Invoke();
-        }
-
-        private void OnGameSessionReceived(GameSessionPayload payload)
-        {
-            if (payload == null)
-                return;
-
-            // 信令侧与 HTTP 侧字段一致，转成统一对外类型，避免调用方区分两个来源。
-            CurrentSession = new GameSessionDto
-            {
-                session_id = payload.session_id,
-                room_code = payload.room_code,
-                transport_mode = payload.transport_mode,
-                host_account_id = payload.host_account_id,
-                host_address = payload.host_address,
-                host_port = payload.host_port,
-                status = payload.status,
-            };
-
-            Debug.Log($"[NetworkSession] 游戏会话: {CurrentSession.session_id} ({CurrentSession.status}) " +
-                      $"{CurrentSession.host_address}:{CurrentSession.host_port}");
-
-            SessionChanged?.Invoke(CurrentSession);
         }
     }
 }

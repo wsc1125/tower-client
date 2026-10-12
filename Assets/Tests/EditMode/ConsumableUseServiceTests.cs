@@ -7,7 +7,7 @@ using NUnit.Framework;
 public sealed class ConsumableUseServiceTests
 {
     /// <summary>测试用作用目标：血量与护甲耐久都是普通字段，可直接摆布。</summary>
-    private sealed class FakeTarget : IConsumableTarget
+    private class FakeTarget : IConsumableTarget
     {
         public float MaximumHealth = 100f;
         public float CurrentHealth = 100f;
@@ -190,6 +190,51 @@ public sealed class ConsumableUseServiceTests
 
         Assert.That(ok, Is.False);
         Assert.That(med.CurrentDurability, Is.EqualTo(100));
+    }
+
+    private sealed class DeferredHealTarget : FakeTarget, IRemoteHealingTarget
+    {
+        public System.Action<float> Reply;
+        public bool Accept = true;
+        public bool RequiresRemoteHeal => true;
+        public float Requested;
+
+        public bool RequestHeal(float amount, System.Action<float> completed)
+        {
+            Requested = amount;
+            Reply = completed;
+            return Accept;
+        }
+    }
+
+    [Test]
+    public void TryHealRemote_WaitsForConfirmedAmountAndIgnoresDuplicateReply()
+    {
+        var med = TestItems.HealInstance(healAmount: 50f, pool: 100);
+        var target = new DeferredHealTarget { CurrentHealth = 40f };
+        var notifications = 0;
+
+        Assert.That(ConsumableUseService.TryHealRemote(med, target, _ => notifications++), Is.True);
+        Assert.That(target.Requested, Is.EqualTo(50f));
+        Assert.That(med.CurrentDurability, Is.EqualTo(100));
+        Assert.That(ConsumableUseService.TryHealRemote(med, target, _ => notifications++), Is.False);
+        target.Reply(15f);
+        target.Reply(15f);
+
+        Assert.That(med.CurrentDurability, Is.EqualTo(85));
+        Assert.That(notifications, Is.EqualTo(1));
+        Assert.That(target.CurrentHealth, Is.EqualTo(40f));
+    }
+
+    [Test]
+    public void TryHealRemote_RejectionDoesNotConsumeDurability()
+    {
+        var med = TestItems.HealInstance(healAmount: 50f, pool: 100);
+        var target = new DeferredHealTarget { CurrentHealth = 40f };
+        Assert.That(ConsumableUseService.TryHealRemote(med, target, _ => { }), Is.True);
+        target.Reply(0f);
+        Assert.That(med.CurrentDurability, Is.EqualTo(100));
+        Assert.That(ConsumableUseService.TryHealRemote(med, target, _ => { }), Is.True);
     }
 
     // ==================== 修甲路径 ====================

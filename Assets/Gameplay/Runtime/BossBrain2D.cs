@@ -70,6 +70,18 @@ public sealed class BossBrain2D : MonoBehaviour, IDamageable
     public bool IsDead => health != null && health.IsDead;
     public float CurrentHealth => health != null ? health.Current : maximumHealth;
 
+    /// <summary>
+    /// 联机客户端为 true：跳过本地 AI 逻辑，但保持注册与可被索敌。
+    /// 禁用组件会注销注册表，导致客户端武器无法索敌。单机恒为 false。
+    /// </summary>
+    public bool NetworkPuppet { get; set; }
+
+    /// <summary>
+    /// 当前是否正在播放攻击动画。供联机同步读取 ——
+    /// BOSS 没有完整 FSM，用「攻击中 / 待机 / 死亡」三态表达即可。
+    /// </summary>
+    public bool IsAttacking { get; private set; }
+
     /// <summary>当前是否处于阶段二（血量低于阈值）。</summary>
     public bool IsPhaseTwo => health != null && health.Current <= health.Maximum * phaseTwoHealthRatio;
 
@@ -143,6 +155,7 @@ public sealed class BossBrain2D : MonoBehaviour, IDamageable
 
         var provider = new NearestPlayerTargetProvider();
         provider.SetSelf(transform);
+        provider.SetLoseRange(loseRange);
         if (player != null)
             provider.SetExplicitTarget(player);
 
@@ -192,9 +205,13 @@ public sealed class BossBrain2D : MonoBehaviour, IDamageable
 
     private void FixedUpdate()
     {
-        // 本地冻结（联机弹窗）期间 BOSS 停住：世界照常推进，但本机看到的 BOSS 暂停。
-        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
-        if (LocalPauseScope.IsFrozen)
+        // 联机客户端：AI 由主机权威驱动，本端只做表现，跳过全部行为逻辑。
+        if (NetworkPuppet)
+            return;
+
+        // 世界冻结（仅单机暂停）期间 BOSS 停住：联机下世界永不停，BOSS 照常推进。
+        // 单机下 IsWorldFrozen 与改造前的 timeScale=0 语义一致。
+        if (LocalPauseScope.IsWorldFrozen)
             return;
 
         if (IsDead)
@@ -215,6 +232,10 @@ public sealed class BossBrain2D : MonoBehaviour, IDamageable
 
         var phaseTwo = IsPhaseTwo;
         var shouldAttack = ShouldAttack(IsDead, playerDistance, attackRange, cooldownRemaining);
+
+        // 攻击状态：进入攻击范围且冷却结束即视为攻击中，动画播完或脱离范围则结束。
+        // 供联机同步读取，客户端据此复现攻击动画。
+        IsAttacking = shouldAttack && (visual == null || !visual.AttackFinished);
 
         if (visual != null)
         {
@@ -240,6 +261,7 @@ public sealed class BossBrain2D : MonoBehaviour, IDamageable
 
             var shockwave = Instantiate(shockwavePrefab, transform.position, Quaternion.identity);
             shockwave.Play(shockwaveRadius, shockwaveDamage, bodyCollider);
+            SpawnIfServer(shockwave.gameObject);
             return;
         }
 
@@ -271,7 +293,26 @@ public sealed class BossBrain2D : MonoBehaviour, IDamageable
                 foreach (var a in spawned[i].GetComponentsInChildren<Collider2D>())
                     spawned[j].IgnoreCollisionWith(a);
             }
+
+            // 联机主机：把弹丸注册进 NGO，由 NGO 自动同步到所有客户端。
+            // 参数在 EnemyLaserProjectile2D.OnNetworkSpawn 里由主机写入并同步。
+            SpawnIfServer(spawned[i].gameObject);
         }
+    }
+
+    /// <summary>
+    /// 联机主机：把运行时生成的攻击物注册进 NGO，由 NGO 自动同步到所有客户端。
+    /// 单机时 NetworkManager 未启动，直接跳过，行为与改造前一致。
+    /// </summary>
+    private static void SpawnIfServer(GameObject target)
+    {
+        var nm = Unity.Netcode.NetworkManager.Singleton;
+        if (nm == null || !nm.IsListening || !nm.IsServer)
+            return;
+
+        var netObj = target.GetComponent<Unity.Netcode.NetworkObject>();
+        if (netObj != null && !netObj.IsSpawned)
+            netObj.Spawn(true);
     }
 
     /// <summary>

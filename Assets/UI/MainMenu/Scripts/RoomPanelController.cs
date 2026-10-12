@@ -27,6 +27,9 @@ public sealed class RoomPanelController : MonoBehaviour
         public bool IsHost;
         public bool IsLocal;
 
+        /// <summary>是否已准备。房主恒为 true（房主点出发即开始，无需准备）。</summary>
+        public bool IsReady;
+
         /// <summary>头像贴图。未加载或加载失败时为 null，此时显示占位色块。</summary>
         public Texture2D Avatar;
     }
@@ -72,6 +75,12 @@ public sealed class RoomPanelController : MonoBehaviour
     [Tooltip("出发按钮上的文字。")]
     [SerializeField] private TMP_Text departLabel;
 
+    [Tooltip("准备按钮。仅成员可见，点击切换准备状态。")]
+    [SerializeField] private Button readyButton;
+
+    [Tooltip("准备按钮上的文字。")]
+    [SerializeField] private TMP_Text readyLabel;
+
     [Header("成员列表")]
     [Tooltip("成员条目容器。条目按加入顺序纵向排列。")]
     [SerializeField] private RectTransform memberListRoot;
@@ -102,6 +111,9 @@ public sealed class RoomPanelController : MonoBehaviour
     /// <summary>当前是否在「创建房间」页签。</summary>
     private bool isCreateTab = true;
 
+    /// <summary>本端（成员）当前准备状态。房主不使用。</summary>
+    private bool localReady;
+
     /// <summary>提交创建房间。参数：房间名、人数上限。</summary>
     public event Action<string, int> CreateRequested;
 
@@ -113,6 +125,9 @@ public sealed class RoomPanelController : MonoBehaviour
 
     /// <summary>房主请求出发（开始游戏）。</summary>
     public event Action DepartRequested;
+
+    /// <summary>成员请求切换准备状态。参数为期望的准备状态。</summary>
+    public event Action<bool> ReadyRequested;
 
     /// <summary>面板关闭。</summary>
     public event Action Closed;
@@ -152,6 +167,9 @@ public sealed class RoomPanelController : MonoBehaviour
 
         if (departButton != null)
             departButton.onClick.AddListener(() => DepartRequested?.Invoke());
+
+        if (readyButton != null)
+            readyButton.onClick.AddListener(OnReadyClicked);
 
         if (closeButton != null)
             closeButton.onClick.AddListener(Close);
@@ -272,28 +290,60 @@ public sealed class RoomPanelController : MonoBehaviour
     }
 
     /// <summary>
-    /// 刷新出发按钮状态。
-    /// 仅房主、且房间人数大于 1 时可点击；成员显示「等待房主出发」。
+    /// 刷新出发 / 准备按钮状态。
+    ///
+    /// 房主：显示「出发」，仅人数 > 1 时可点；准备按钮隐藏。
+    /// 成员：出发按钮隐藏，显示「准备 / 已准备」切换按钮。
     /// </summary>
     /// <param name="isHost">本端是否为房主。</param>
     /// <param name="memberCount">房间当前人数。</param>
     public void SetDepartState(bool isHost, int memberCount)
     {
-        if (departButton == null)
-            return;
-
-        var canDepart = isHost && memberCount > 1;
-        departButton.interactable = canDepart;
-
-        if (departLabel != null)
+        // 房主：出发按钮。
+        if (departButton != null)
         {
-            if (!isHost)
-                departLabel.text = "等待房主出发";
-            else if (memberCount <= 1)
-                departLabel.text = "等待队友加入";
-            else
-                departLabel.text = "出发";
+            departButton.gameObject.SetActive(isHost);
+
+            var canDepart = isHost && memberCount > 1;
+            departButton.interactable = canDepart;
+
+            if (departLabel != null)
+            {
+                if (memberCount <= 1)
+                    departLabel.text = "等待队友加入";
+                else
+                    departLabel.text = "出发";
+            }
         }
+
+        // 成员：准备按钮。
+        if (readyButton != null)
+        {
+            readyButton.gameObject.SetActive(!isHost);
+
+            if (readyLabel != null)
+                readyLabel.text = localReady ? "已准备" : "准备";
+        }
+    }
+
+    /// <summary>成员点击准备按钮：切换准备状态并上报。</summary>
+    private void OnReadyClicked()
+    {
+        localReady = !localReady;
+
+        if (readyLabel != null)
+            readyLabel.text = localReady ? "已准备" : "准备";
+
+        ReadyRequested?.Invoke(localReady);
+    }
+
+    /// <summary>重置本端准备状态（离开房间 / 重新进房时调用）。</summary>
+    public void ResetReady()
+    {
+        localReady = false;
+
+        if (readyLabel != null)
+            readyLabel.text = "准备";
     }
 
     /// <summary>显示 / 隐藏输入区（页签 + 两页内容）。</summary>
@@ -389,7 +439,9 @@ public sealed class RoomPanelController : MonoBehaviour
         {
             var suffix = member.IsHost ? "（房主）" : string.Empty;
             var self = member.IsLocal ? "（我）" : string.Empty;
-            nameText.text = (member.DisplayName ?? "玩家") + suffix + self;
+            // 不用 ✓：simhei 动态字体没有该字形，会渲染成方框。用纯文字最稳。
+            var ready = member.IsHost || member.IsReady ? "  [已准备]" : "  [未准备]";
+            nameText.text = (member.DisplayName ?? "玩家") + suffix + self + ready;
             nameText.color = member.IsLocal ? accentColor : Color.white;
         }
     }

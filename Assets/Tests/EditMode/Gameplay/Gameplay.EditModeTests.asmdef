@@ -4,7 +4,9 @@
   "references": [
     "Gameplay",
     "BattleHUD",
-    "Inventory"
+    "Inventory",
+    "Network",
+    "Unity.Netcode.Runtime"
   ],
   "includePlatforms": [
     "Editor"

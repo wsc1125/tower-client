@@ -302,6 +302,8 @@ GameObject:
   m_Component:
   - component: {fileID: 96934256}
   - component: {fileID: 96934255}
+  - component: {fileID: 96934257}
+  - component: {fileID: 96934258}
   m_Layer: 0
   m_Name: BattleNetworkBinder
   m_TagString: Untagged
@@ -337,6 +339,38 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+--- !u!114 &96934257
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 96934254}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GlobalObjectIdHash: 206159350
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+--- !u!114 &96934258
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 96934254}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: baf9a6d31cedd7647b6ccf461d5933fe, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1001 &373774303
 PrefabInstance:
   m_ObjectHideFlags: 0
@@ -2227,6 +2261,7 @@ GameObject:
   - component: {fileID: 1632083347}
   - component: {fileID: 1632083346}
   - component: {fileID: 1632083345}
+  - component: {fileID: 1632083349}
   m_Layer: 0
   m_Name: HUDCanvas
   m_TagString: Untagged
@@ -2320,6 +2355,18 @@ RectTransform:
   m_AnchoredPosition: {x: 0, y: 0}
   m_SizeDelta: {x: 0, y: 0}
   m_Pivot: {x: 0, y: 0}
+--- !u!114 &1632083349
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1632083344}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: fb04296de583c0a4f905ea95d463ebd0, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &1656005016 stripped
 GameObject:
   m_CorrespondingSourceObject: {fileID: 2260301540689113387, guid: 541ffe6451d4738458a345c2e1f80bd8, type: 3}

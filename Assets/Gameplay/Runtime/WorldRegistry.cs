@@ -38,7 +38,7 @@ public static class WorldRegistry
         {
             RemoveInvalidDroppedItems();
             DiscoverDroppedItems();
-            return droppedItems;
+            return new List<DroppedItem2D>(droppedItems);
         }
     }
 

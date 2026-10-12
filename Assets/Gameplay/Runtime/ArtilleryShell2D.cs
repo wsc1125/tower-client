@@ -1,13 +1,43 @@
+using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
 /// 迫击炮弹体：从炮口高抛飞向落点，落地时结算范围伤害。
 /// 弹体朝向跟随飞行方向：上升段朝上，下落段朝下。
 /// 弹体只做表现与伤害结算，预警圈由 <see cref="ArtilleryWarning2D"/> 单独负责。
+///
+/// 联机：由主机生成并 <c>Spawn</c>，6 个飞行参数（起点 / 落点 / 弧高 / 时长 / 半径 / 伤害）
+/// 通过 NetworkVariable 广播，客户端按同一套抛物线公式复现飞行，**不结算伤害**。
+/// 单机模式下 prefab 上没有 NetworkObject，<see cref="IsSpawned"/> 恒为 false，
+/// 走本地分支，行为与改造前完全一致。
 /// </summary>
-public sealed class ArtilleryShell2D : MonoBehaviour
+public sealed class ArtilleryShell2D : NetworkBehaviour
 {
     [SerializeField] private float spriteScale = 0.35f;
+
+    /// <summary>权威起点。主机写入，客户端只读。</summary>
+    private readonly NetworkVariable<Vector2> syncedStart =
+        new NetworkVariable<Vector2>(Vector2.zero, writePerm: NetworkVariableWritePermission.Server);
+
+    /// <summary>权威落点。主机写入，客户端只读。</summary>
+    private readonly NetworkVariable<Vector2> syncedTarget =
+        new NetworkVariable<Vector2>(Vector2.zero, writePerm: NetworkVariableWritePermission.Server);
+
+    /// <summary>权威弧高。主机写入，客户端只读。</summary>
+    private readonly NetworkVariable<float> syncedArc =
+        new NetworkVariable<float>(3.2f, writePerm: NetworkVariableWritePermission.Server);
+
+    /// <summary>权威飞行时长。主机写入，客户端只读。</summary>
+    private readonly NetworkVariable<float> syncedFlightTime =
+        new NetworkVariable<float>(0.8f, writePerm: NetworkVariableWritePermission.Server);
+
+    /// <summary>权威爆炸半径。主机写入，客户端只读。</summary>
+    private readonly NetworkVariable<float> syncedBlastRadius =
+        new NetworkVariable<float>(1.6f, writePerm: NetworkVariableWritePermission.Server);
+
+    /// <summary>权威爆炸伤害。主机写入，客户端只读。</summary>
+    private readonly NetworkVariable<float> syncedBlastDamage =
+        new NetworkVariable<float>(18f, writePerm: NetworkVariableWritePermission.Server);
 
     private Vector2 start;
     private Vector2 target;
@@ -18,8 +48,108 @@ public sealed class ArtilleryShell2D : MonoBehaviour
     private float elapsed;
     private bool launched;
 
-    /// <summary>发射。start 为炮口位置，target 为落点。</summary>
+    /// <summary>本端是否为权威端（主机 / 单机）。</summary>
+    private bool IsAuthority => !IsSpawned || IsServer;
+
+    public override void OnNetworkSpawn()
+    {
+        base.OnNetworkSpawn();
+
+        if (IsServer)
+        {
+            // 主机：此时 NetworkVariable 已初始化，写入会正常标记 dirty 并同步给客户端。
+            // 必须在 OnNetworkSpawn 里写（而非 Spawn 之前）—— Spawn 前写入不会标记 dirty。
+            PublishParams();
+        }
+        else
+        {
+            // 客户端：先按当前值启动表现，再订阅变化 —— 主机写入的 Delta 可能晚一帧到达。
+            ApplyAuthoritativeParams(
+                syncedStart.Value,
+                syncedTarget.Value,
+                syncedArc.Value,
+                syncedFlightTime.Value,
+                syncedBlastRadius.Value,
+                syncedBlastDamage.Value);
+
+            syncedStart.OnValueChanged += HandleStartChanged;
+            syncedTarget.OnValueChanged += HandleTargetChanged;
+        }
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        if (!IsServer)
+        {
+            syncedStart.OnValueChanged -= HandleStartChanged;
+            syncedTarget.OnValueChanged -= HandleTargetChanged;
+        }
+
+        base.OnNetworkDespawn();
+    }
+
+    private void HandleStartChanged(Vector2 previous, Vector2 current)
+    {
+        ApplyAuthoritativeParams(
+            current,
+            syncedTarget.Value,
+            syncedArc.Value,
+            syncedFlightTime.Value,
+            syncedBlastRadius.Value,
+            syncedBlastDamage.Value);
+    }
+
+    private void HandleTargetChanged(Vector2 previous, Vector2 current)
+    {
+        ApplyAuthoritativeParams(
+            syncedStart.Value,
+            current,
+            syncedArc.Value,
+            syncedFlightTime.Value,
+            syncedBlastRadius.Value,
+            syncedBlastDamage.Value);
+    }
+
+    /// <summary>发射。start 为炮口位置，target 为落点。主机调用。</summary>
     public void Launch(
+        Vector2 startPosition,
+        Vector2 targetPosition,
+        float arc,
+        float duration,
+        float radius,
+        float damage)
+    {
+        start = startPosition;
+        target = targetPosition;
+        arcHeight = Mathf.Max(0f, arc);
+        flightTime = Mathf.Max(0.05f, duration);
+        blastRadius = Mathf.Max(0.1f, radius);
+        blastDamage = Mathf.Max(0f, damage);
+        elapsed = 0f;
+        launched = true;
+
+        transform.position = start;
+        transform.localScale = Vector3.one * spriteScale;
+        transform.rotation = Quaternion.identity;
+
+        // 联机主机：若已 Spawn（例如运行时改参数），立即同步。
+        if (IsSpawned && IsServer)
+            PublishParams();
+    }
+
+    /// <summary>把本地参数写入权威字段。仅主机调用。</summary>
+    private void PublishParams()
+    {
+        syncedStart.Value = start;
+        syncedTarget.Value = target;
+        syncedArc.Value = arcHeight;
+        syncedFlightTime.Value = flightTime;
+        syncedBlastRadius.Value = blastRadius;
+        syncedBlastDamage.Value = blastDamage;
+    }
+
+    /// <summary>客户端按权威参数启动表现。</summary>
+    private void ApplyAuthoritativeParams(
         Vector2 startPosition,
         Vector2 targetPosition,
         float arc,
@@ -46,9 +176,9 @@ public sealed class ArtilleryShell2D : MonoBehaviour
         if (!launched)
             return;
 
-        // 本地冻结（联机弹窗）期间弹体停住：世界照常推进，但本机看到的飞行暂停。
-        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
-        if (LocalPauseScope.IsFrozen)
+        // 世界冻结（仅单机暂停）期间弹体停住：联机下世界永不停，弹体照常飞行。
+        // 单机下 IsWorldFrozen 与改造前的 timeScale=0 语义一致。
+        if (LocalPauseScope.IsWorldFrozen)
             return;
 
         elapsed += Time.deltaTime;
@@ -81,17 +211,34 @@ public sealed class ArtilleryShell2D : MonoBehaviour
     {
         launched = false;
 
-        // 范围伤害：落点半径内的玩家受伤
-        var hits = Physics2D.OverlapCircleAll(target, blastRadius);
-        foreach (var hit in hits)
+        // 范围伤害只在权威端结算：客户端爆炸只做表现，避免各端血量不一致。
+        if (IsAuthority)
         {
-            var playerHealth = hit.GetComponentInParent<PlayerHealth2D>();
-            if (playerHealth != null)
+            var hits = Physics2D.OverlapCircleAll(target, blastRadius);
+            foreach (var hit in hits)
             {
-                playerHealth.TakeDamage(blastDamage);
-                break;
+                var playerHealth = hit.GetComponentInParent<PlayerHealth2D>();
+                if (playerHealth != null)
+                {
+                    playerHealth.TakeDamage(blastDamage);
+                    break;
+                }
             }
         }
+
+        DespawnSelf();
+    }
+
+    /// <summary>
+    /// 销毁自身。联机下**只有主机能销毁已 Spawn 的 NetworkObject** ——
+    /// 客户端本地 Destroy 会报「Destroy a spawned NetworkObject on a non-host client is not valid」，
+    /// 且不会通知主机，导致两端状态不一致。
+    /// 客户端什么都不做，等主机的 Despawn 消息到达后由 NGO 自动销毁。
+    /// </summary>
+    private void DespawnSelf()
+    {
+        if (IsSpawned && !IsServer)
+            return;
 
         Destroy(gameObject);
     }

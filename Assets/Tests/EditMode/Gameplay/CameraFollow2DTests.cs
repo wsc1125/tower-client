@@ -1,3 +1,4 @@
+using System.IO;
 using NUnit.Framework;
 using UnityEditor;
 using UnityEngine;
@@ -80,5 +81,20 @@ public sealed class CameraFollow2DTests
         Assert.That(captured, Is.True);
         Assert.That(follow.Bounds.center.x, Is.EqualTo(0f).Within(0.0001f), "被关闭的渲染器不应参与夹取范围");
         Assert.That(follow.Bounds.width, Is.EqualTo(1f).Within(0.0001f));
+    }
+
+    [Test]
+    public void OnlineBattleScene_BindsCameraToExistingLocalPlayer()
+    {
+        var source = File.ReadAllText("Assets/Gameplay/Runtime/BattleNetworkBinder.cs");
+        var start = source.IndexOf("private void Start()", System.StringComparison.Ordinal);
+        var attach = source.IndexOf("public void AttachLocalCamera(", System.StringComparison.Ordinal);
+        Assert.That(start, Is.GreaterThanOrEqualTo(0));
+        Assert.That(attach, Is.GreaterThan(start));
+
+        var startup = source.Substring(start, attach - start);
+        Assert.That(startup, Does.Contain("GetPlayerNetworkObject("));
+        Assert.That(startup, Does.Contain("LocalClientId"));
+        Assert.That(startup, Does.Contain("AttachLocalCamera("));
     }
 }

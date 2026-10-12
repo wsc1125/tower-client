@@ -10,9 +10,19 @@ public sealed class PlayerHealth
         Current = Maximum;
     }
 
-    public float Maximum { get; }
+    public float Maximum { get; private set; }
     public float Current { get; private set; }
     public bool IsDead => Current <= 0f;
+
+    /// <summary>
+    /// 直接对齐到权威血量。供联机客户端使用 —— 客户端不结算伤害，
+    /// 血量由主机广播，这里只做数值对齐，不做任何减伤 / 死亡判定。
+    /// </summary>
+    public void Set(float current, float maximum)
+    {
+        Maximum = Mathf.Max(1f, maximum);
+        Current = Mathf.Clamp(current, 0f, Maximum);
+    }
 
     public void TakeDamage(float amount)
     {
@@ -149,7 +159,7 @@ public sealed class PlayerArmor
     }
 }
 
-public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
+public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget, ILocalConsumableTarget, IRemoteHealingTarget
 {
     [SerializeField] private float maximumHealth = 100f;
     [SerializeField] private StatusPanelController statusPanel;
@@ -172,6 +182,12 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
     public event Action Died;
 
     /// <summary>
+    /// 复活时触发一次。供死亡流程重置「已处理死亡」标记，
+    /// 否则复活后再次死亡不会重新进入观战流程。
+    /// </summary>
+    public event Action Revived;
+
+    /// <summary>
     /// 每次实际扣血后触发一次，参数为本次实际扣掉的血量（已计入护甲减伤）。
     /// 供表现层做受击反馈（闪白、屏幕红边等）。已死亡后的补刀不会触发。
     /// </summary>
@@ -186,6 +202,29 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
     public float CurrentHealth => health != null ? health.Current : maximumHealth;
     public float MaximumHealth => health != null ? health.Maximum : maximumHealth;
     public bool IsDead => health != null && health.IsDead;
+    public bool IsLocalConsumableTarget
+    {
+        get
+        {
+            var sync = GetComponent<Tower.Netcode.PlayerNetworkSync>();
+            return sync == null || sync.IsConsumableOwner;
+        }
+    }
+
+    public bool RequiresRemoteHeal
+    {
+        get
+        {
+            var sync = GetComponent<Tower.Netcode.PlayerNetworkSync>();
+            return sync != null && sync.IsSpawned;
+        }
+    }
+
+    public bool RequestHeal(float amount, Action<float> completed)
+    {
+        var sync = GetComponent<Tower.Netcode.PlayerNetworkSync>();
+        return sync != null && sync.RequestConsumableHeal(amount, completed);
+    }
 
     /// <summary>受击闪烁期间免疫伤害。闪烁时长由 CharacterVisual2D 的 hitFlashDuration 决定。</summary>
     public bool IsInvulnerable
@@ -282,10 +321,35 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
         if (restored > 0f)
         {
             RefreshView();
-            GameSession.LocalPlayer.Raid.NotifyChanged();
+            if (IsLocalConsumableTarget)
+                GameSession.LocalPlayer.Raid.NotifyChanged();
         }
 
         return restored;
+    }
+
+    /// <summary>
+    /// 复活：把血量重置到上限的指定比例，并清除「已宣告死亡」标记。
+    ///
+    /// 供联机召唤复活使用 —— 主机执行 <c>PlayerNetworkSync.Revive</c> 时必须调用本方法，
+    /// 否则主机端 <see cref="health"/> 仍为 0、<see cref="IsDead"/> 仍为 true，
+    /// <see cref="TakeDamage"/> 会被永久拦截，表现为「复活后角色不再受到伤害」。
+    ///
+    /// 清除 <see cref="deathAnnounced"/> 是为了让复活后再次死亡能重新触发 <see cref="Died"/>。
+    /// </summary>
+    /// <param name="healthRatio">复活后的血量比例（0~1）。</param>
+    public void Revive(float healthRatio)
+    {
+        health ??= new PlayerHealth(maximumHealth);
+        armor ??= new PlayerArmor();
+
+        var maximum = health.Maximum;
+        var target = maximum * Mathf.Clamp01(healthRatio);
+        health.Set(target, maximum);
+        deathAnnounced = false;
+        RefreshView();
+
+        Revived?.Invoke();
     }
 
     /// <summary>
@@ -401,6 +465,53 @@ public sealed class PlayerHealth2D : MonoBehaviour, IConsumableTarget
             damageVignette = vignette;
         RefreshView();
     }
+
+    /// <summary>
+    /// 按权威血量刷新本端表现。供联机客户端使用 ——
+    /// 客户端不结算伤害，血量由主机广播，这里只负责把广播值落到本地血量与 HUD 上。
+    ///
+    /// 与 <see cref="TakeDamage"/> 的区别：不结算护甲、不触发死亡事件，
+    /// 只做「血量对齐 + 受击表现」，避免客户端重复结算导致数值不一致。
+    /// </summary>
+    /// <param name="current">权威当前血量。</param>
+    /// <param name="maximum">权威血量上限。</param>
+    /// <param name="playHitFeedback">是否播放受击表现（血量下降时为 true）。</param>
+    public void ApplyAuthoritativeHealth(float current, float maximum, bool playHitFeedback)
+    {
+        health ??= new PlayerHealth(maximum);
+        armor ??= new PlayerArmor();
+
+        var before = health.Current;
+        health.Set(current, maximum);
+        RefreshView();
+
+        if (playHitFeedback && current < before)
+        {
+            lastHitTime = Time.time;
+            Damaged?.Invoke(before - current);
+            PlayHitFeedback();
+        }
+    }
+
+    public void ApplyAuthoritativeRevive(float current, float maximum)
+    {
+        health ??= new PlayerHealth(maximum);
+        armor ??= new PlayerArmor();
+
+        var wasDead = health.IsDead;
+        health.Set(current, maximum);
+        deathAnnounced = false;
+        RefreshView();
+
+        if (wasDead)
+            Revived?.Invoke();
+    }
+
+    /// <summary>当前血量（供联机同步读取）。</summary>
+    public float CurrentHealthValue => health != null ? health.Current : maximumHealth;
+
+    /// <summary>血量上限（供联机同步读取）。</summary>
+    public float MaximumHealthValue => health != null ? health.Maximum : maximumHealth;
 
     /// <summary>护甲取自局内装备槽 —— 局内换装会立刻反映到减伤上。</summary>
     private void RebuildArmor()

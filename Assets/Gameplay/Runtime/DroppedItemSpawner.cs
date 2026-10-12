@@ -17,6 +17,9 @@ public sealed class DroppedItemSpawner : MonoBehaviour, IDroppedItemSpawner
 
     /// <summary>
     /// 在指定位置生成一件掉落物。物品实例原样带走（耐久不重置），因此丢出再捡回状态不变。
+    ///
+    /// 联机：丢弃是权威操作，必须由主机生成并 Spawn，客户端由 NGO 同步接收。
+    /// 客户端调用本方法时只发请求，不本地生成 —— 否则各端各有一份掉落物。
     /// </summary>
     public bool Spawn(ItemInstance item, Vector2 position)
     {
@@ -29,6 +32,15 @@ public sealed class DroppedItemSpawner : MonoBehaviour, IDroppedItemSpawner
 
         var dropped = Instantiate(prefab, position, Quaternion.identity);
         dropped.Initialize(item);
+
+        // 联机主机：先把物品信息写入权威字段，再 Spawn —— 使信息随 Spawn 消息一起到达客户端。
+        var netObj = dropped.GetComponent<Unity.Netcode.NetworkObject>();
+        if (netObj != null && !netObj.IsSpawned)
+        {
+            dropped.PublishItemBeforeSpawn();
+            netObj.Spawn(true);
+        }
+
         return true;
     }
 

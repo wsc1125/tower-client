@@ -1,6 +1,5 @@
 using System.Collections;
 using System.Collections.Generic;
-using Tower.Netcode;
 using Tower.Network;
 using UnityEngine;
 
@@ -49,15 +48,12 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
             roomPanel.JoinRequested += OnJoinRequested;
             roomPanel.LeaveRequested += OnLeaveRequested;
             roomPanel.DepartRequested += OnDepartRequested;
+            roomPanel.ReadyRequested += OnReadyRequested;
             roomPanel.Closed += OnPanelClosed;
         }
 
         if (modeTab != null)
             modeTab.ModeChanged += OnModeChanged;
-
-        // 联机失败时留在房间界面显示原因，不进入战斗。
-        if (MultiplayerCoordinator.Instance != null)
-            MultiplayerCoordinator.Instance.Failed += OnMultiplayerFailed;
     }
 
     private void Start()
@@ -72,6 +68,7 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
 
         session.RoomChanged += OnRoomChanged;
         session.RoomLeft += OnRoomLeft;
+        session.HostChanged += OnHostChanged;
 
         // 成员端：房主发起开始游戏后，自动进入战斗场景。
         if (session.Signal != null)
@@ -94,19 +91,18 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
             roomPanel.JoinRequested -= OnJoinRequested;
             roomPanel.LeaveRequested -= OnLeaveRequested;
             roomPanel.DepartRequested -= OnDepartRequested;
+            roomPanel.ReadyRequested -= OnReadyRequested;
             roomPanel.Closed -= OnPanelClosed;
         }
 
         if (modeTab != null)
             modeTab.ModeChanged -= OnModeChanged;
 
-        if (MultiplayerCoordinator.Instance != null)
-            MultiplayerCoordinator.Instance.Failed -= OnMultiplayerFailed;
-
         if (session != null)
         {
             session.RoomChanged -= OnRoomChanged;
             session.RoomLeft -= OnRoomLeft;
+            session.HostChanged -= OnHostChanged;
 
             if (session.Signal != null)
                 session.Signal.GameStarting -= OnGameStarting;
@@ -118,6 +114,9 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
 
     /// <summary>当前是否已在房间内。</summary>
     public bool IsInRoom => session != null && session.CurrentRoom != null;
+
+    /// <summary>本端是否为当前房间的房主。供出发流程判断启动 Host 还是 Client。</summary>
+    public bool IsLocalHost => IsLocalHostInternal();
 
     /// <summary>
     /// 联机模式下点「出发」时调用。
@@ -151,14 +150,20 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
         roomPanel?.Close();
     }
 
-    /// <summary>房主点了「出发」：启动联机协调器，由它建立连接并统一切场。</summary>
+    /// <summary>
+    /// 房主点了「出发」：启动联机流程。
+    ///
+    /// 注意：这里**不再**发送 start_game 信号 —— 由 MultiplayerCoordinator
+    /// 在「成员全部连入 NGO 之后」统一发送，避免成员收到信号时房主还没广播地址。
+    /// 房主自己通过 DepartFlow → MultiplayerDepartBridge 启动 Host 流程。
+    /// </summary>
     private void OnDepartRequested()
     {
         if (session == null || session.CurrentRoom == null)
             return;
 
         // 仅房主可发起。
-        if (!IsLocalHost())
+        if (!IsLocalHostInternal())
         {
             roomPanel?.ShowError("只有房主可以开始游戏");
             return;
@@ -170,45 +175,26 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
             return;
         }
 
-        var coordinator = MultiplayerCoordinator.Instance;
-        if (coordinator == null)
-        {
-            roomPanel?.ShowError("联机组件未就绪");
-            return;
-        }
-
-        // 广播开始信号，成员端收到 GameStarting 后启动 Client。
-        session.Signal?.SendStartGame();
-
-        // 房主启动 Host 流程：创建会话 → 监听 → 等成员 → 切场景。
-        StartCoroutine(coordinator.StartHostFlow());
+        // 房主启动 Host 流程（DepartFlow 会经桥接调用 MultiplayerCoordinator）。
+        departFlow?.Depart();
     }
 
-    /// <summary>成员端收到房主的开始信号：启动 Client 流程，等待房主切场景。</summary>
+    /// <summary>
+    /// 成员端收到房主的开始信号。
+    ///
+    /// 此时房主已完成 StartHost 并广播地址，成员据此启动 Client 连接。
+    /// 房主自己不走这里（它已通过 Depart 启动 Host）。
+    /// </summary>
     private void OnGameStarting(GameStartingPayload payload)
     {
-        // 房主自己已通过 StartHostFlow 进入，这里只处理成员端。
-        if (IsLocalHost())
+        if (IsLocalHostInternal())
             return;
 
-        var coordinator = MultiplayerCoordinator.Instance;
-        if (coordinator == null)
-        {
-            roomPanel?.ShowError("联机组件未就绪");
-            return;
-        }
-
-        StartCoroutine(coordinator.StartClientFlow());
-    }
-
-    /// <summary>联机失败：留在房间界面并显示原因，不进入战斗。</summary>
-    private void OnMultiplayerFailed(string reason)
-    {
-        roomPanel?.ShowError(reason);
+        departFlow?.Depart();
     }
 
     /// <summary>本端是否为当前房间的房主。</summary>
-    private bool IsLocalHost()
+    private bool IsLocalHostInternal()
     {
         if (session == null || session.CurrentRoom == null || session.Account == null)
             return false;
@@ -274,6 +260,19 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
         StartCoroutine(LeaveRoutine());
     }
 
+    /// <summary>成员切换准备状态：上报服务端，服务端广播房间状态后各端刷新。</summary>
+    private void OnReadyRequested(bool ready)
+    {
+        session?.SetReady(ready);
+    }
+
+    /// <summary>展示出发失败原因（由 DepartFlow 在联机出发失败时调用）。</summary>
+    public void ShowDepartError(string reason)
+    {
+        roomPanel?.Open();
+        roomPanel?.ShowError(string.IsNullOrEmpty(reason) ? "联机出发失败" : reason);
+    }
+
     private IEnumerator CreateRoutine(string roomName, int maxPlayers)
     {
         yield return session.CreateRoom(roomName, maxPlayers, true, null, OnRequestFailed);
@@ -310,6 +309,25 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
     }
 
     /// <summary>
+    /// 房主迁移：刷新房间面板并提示。
+    ///
+    /// 房主退出后服务端会把房主移交给最早加入的成员并广播 host_changed，
+    /// 这里必须刷新 —— 否则队员看不到新房主，出发按钮状态也不会更新。
+    /// </summary>
+    private void OnHostChanged(long newHostAccountId)
+    {
+        var room = session?.CurrentRoom;
+        if (room == null)
+            return;
+
+        RefreshDepartState(room);
+        RefreshMembers(room);
+
+        var localId = session?.Account?.account_id ?? 0;
+        roomPanel?.ShowError(newHostAccountId == localId ? "你已成为房主" : "房主已变更");
+    }
+
+    /// <summary>
     /// 刷新房间成员列表（头像 + 昵称）。
     ///
     /// 头像需要异步下载，因此先立即用「无头像」的占位数据渲染一遍
@@ -340,6 +358,7 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
                 DisplayName = m.display_name,
                 IsHost = m.is_host,
                 IsLocal = m.account_id == localId,
+                IsReady = m.ready,
                 Avatar = null,
             });
         }
@@ -368,6 +387,7 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
                 DisplayName = m.display_name,
                 IsHost = m.is_host,
                 IsLocal = m.account_id == localId,
+                IsReady = m.ready,
                 Avatar = avatar,
             });
         }
@@ -379,5 +399,6 @@ public sealed class MainMenuRoomBinder : MonoBehaviour
     {
         roomPanel?.HideResult();
         roomPanel?.ClearError();
+        roomPanel?.ResetReady();
     }
 }

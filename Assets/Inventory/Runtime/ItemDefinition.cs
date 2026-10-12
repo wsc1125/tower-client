@@ -42,6 +42,12 @@ public sealed class ItemDefinition : ScriptableObject
     [Tooltip("使用后修复的护甲耐久点数。0 表示不修甲。")]
     [SerializeField] private int repairAmount;
 
+    /// <summary>测试用：注入世界贴图。</summary>
+    public void SetWorldSpriteForTests(Sprite sprite)
+    {
+        worldSprite = sprite;
+    }
+
     /// <summary>存档使用的稳定 ID：取 ScriptableObject 的资源名（asset 文件名）。</summary>
     public string Id => name;
 

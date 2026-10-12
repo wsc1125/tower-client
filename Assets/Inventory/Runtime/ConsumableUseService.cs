@@ -1,3 +1,5 @@
+using System;
+using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>一次使用的结算结果，供 UI 提示「恢复 40 血 / 修复 30 耐久」。</summary>
@@ -37,6 +39,32 @@ public readonly struct ConsumableUseResult
 /// </summary>
 public static class ConsumableUseService
 {
+    private static readonly HashSet<ItemInstance> PendingHeals = new HashSet<ItemInstance>();
+
+    public static bool TryHealRemote(ItemInstance instance, IConsumableTarget target, Action<ConsumableUseResult> completed)
+    {
+        if (!(target is IRemoteHealingTarget remote) || !CanHeal(instance, target) || !PendingHeals.Add(instance))
+            return false;
+
+        var wanted = Mathf.Min(instance.Definition.HealAmount, instance.CurrentDurability, target.MissingHealth());
+        var settled = false;
+        if (wanted <= 0f || !remote.RequestHeal(wanted, actual =>
+        {
+            if (settled)
+                return;
+            settled = true;
+            PendingHeals.Remove(instance);
+            var healed = Mathf.Clamp(actual, 0f, wanted);
+            var spent = healed > 0f ? instance.ConsumeDurability(Mathf.CeilToInt(healed)) : 0;
+            completed?.Invoke(new ConsumableUseResult(healed, 0, spent));
+        }))
+        {
+            PendingHeals.Remove(instance);
+            return false;
+        }
+
+        return true;
+    }
     /// <summary>
     /// 能否使用（补血路径）：是补血道具、目标未死亡、已脱战、且当前确实缺血。
     /// 满血时返回 false —— 避免玩家白吃一瓶。

@@ -28,8 +28,18 @@ public sealed class CharacterVisual2D : MonoBehaviour
     private Color baseColor = Color.white;
     private bool baseColorCaptured;
     private float hitFlashRemaining;
+    private bool isDead;
+    private Sprite frameBeforeDeath;
 
     public FacingDirection Facing => facing;
+
+    /// <summary>
+    /// 是否为远端玩家的网络副本（非本机控制的角色）。
+    /// 远端副本的受击闪烁不受本机冻结（<see cref="LocalPauseScope.IsFrozen"/>）影响：
+    /// 主机端它是权威无敌帧的计时来源，若被本机玩家的观战 / 弹窗冻结卡住，
+    /// 远端玩家会在主机侧永久免疫 —— 不掉血、不死亡，客户端血条与死亡状态不再同步。
+    /// </summary>
+    public bool IsRemoteCopy { get; set; }
 
     /// <summary>是否正在受击闪烁。闪烁期间角色免疫伤害，供 PlayerHealth2D 查询。</summary>
     public bool IsHitFlashing => hitFlashRemaining > 0f;
@@ -54,8 +64,32 @@ public sealed class CharacterVisual2D : MonoBehaviour
         facingOverride = aimDirection;
     }
 
+    public void SetDeathState(bool dead, Sprite deathFrame)
+    {
+        if (spriteRenderer == null)
+            spriteRenderer = GetComponent<SpriteRenderer>();
+
+        if (dead)
+        {
+            if (!isDead)
+                frameBeforeDeath = spriteRenderer.sprite;
+            isDead = true;
+            ApplyFrame(deathFrame);
+        }
+        else if (isDead)
+        {
+            isDead = false;
+            if (frameBeforeDeath != null)
+                spriteRenderer.sprite = frameBeforeDeath;
+            frameBeforeDeath = null;
+        }
+    }
+
     public void SetMotion(Vector2 velocity)
     {
+        if (isDead)
+            return;
+
         if (animation == null)
             animation = new SpriteFrameAnimation(moveFrames, framesPerSecond);
 
@@ -78,6 +112,17 @@ public sealed class CharacterVisual2D : MonoBehaviour
             animation.Reset();
 
         ApplyFrame(animation.CurrentFrame);
+    }
+
+    /// <summary>
+    /// 独立推进受击闪烁计时。
+    ///
+    /// 不能挂在 <see cref="SetMotion"/> 里：联机远端玩家的 <see cref="PlayerMovement2D"/>
+    /// 被禁用后 SetMotion 不再被调用，闪烁计时会永远停住 ——
+    /// 表现为「队友受击后永久变红不恢复」。
+    /// </summary>
+    private void Update()
+    {
         StepHitFlash(Time.deltaTime);
     }
 
@@ -111,9 +156,11 @@ public sealed class CharacterVisual2D : MonoBehaviour
         if (hitFlashRemaining <= 0f)
             return;
 
-        // 本地冻结（联机弹窗）期间闪烁计时停住：世界照常推进，但本机玩家的受击反馈停住。
-        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
-        if (LocalPauseScope.IsFrozen)
+        // 本地冻结（联机弹窗）期间只停住「本机玩家」的闪烁计时。
+        // 远端副本必须照常推进：主机端它是权威无敌帧（IsInvulnerable）的来源，
+        // 一旦被本机观战 / 弹窗冻结卡住，远端玩家会永久免疫 ——
+        // 不掉血、不死亡，客户端血条与死亡状态不再同步。
+        if (!IsRemoteCopy && LocalPauseScope.IsFrozen)
             return;
 
         hitFlashRemaining = Mathf.Max(0f, hitFlashRemaining - Mathf.Max(0f, deltaTime));

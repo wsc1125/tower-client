@@ -131,11 +131,13 @@ public sealed class LoadoutPanelController : MonoBehaviour
     private void OnEnable()
     {
         GameSession.LoadoutChanged += Refresh;
+        GameSession.RaidChanged += Refresh;
     }
 
     private void OnDisable()
     {
         GameSession.LoadoutChanged -= Refresh;
+        GameSession.RaidChanged -= Refresh;
     }
 
     private void OnRectTransformDimensionsChange()

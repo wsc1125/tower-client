@@ -15,6 +15,7 @@ public sealed class PlayerSaveStoreTests
     public void SetUp()
     {
         PlayerSaveStore.Delete();
+        PlayerSaveStore.Delete("account-alpha");
         database = ScriptableObject.CreateInstance<ItemDatabase>();
     }
 
@@ -22,6 +23,7 @@ public sealed class PlayerSaveStoreTests
     public void TearDown()
     {
         PlayerSaveStore.Delete();
+        PlayerSaveStore.Delete("account-alpha");
         Object.DestroyImmediate(database);
     }
 
@@ -212,6 +214,25 @@ public sealed class PlayerSaveStoreTests
 
         // 旧「出征携带」语义上属于局内，迁移时并入仓库避免丢失。
         Assert.That(restored.WarehouseCount(), Is.EqualTo(1));
+    }
+
+    [Test]
+    public void AccountSave_LeavesFixedLocalKeyUntouched()
+    {
+        var local = new PlayerLoadout();
+        var account = new PlayerLoadout();
+        var weapon = TestItems.WeaponInstance("account");
+        Register(weapon.Definition);
+        account.TryAddToWarehouse(weapon);
+        PlayerSaveStore.Save(local);
+        var original = PlayerPrefs.GetString(PlayerSaveStore.PrefsKey);
+
+        PlayerSaveStore.Save(account, "account-alpha");
+        Assert.That(PlayerPrefs.GetString(PlayerSaveStore.PrefsKey), Is.EqualTo(original));
+        Assert.That(PlayerSaveStore.Load("account-alpha").warehouse.Count, Is.EqualTo(1));
+        Assert.That(PlayerSaveStore.Load().warehouse.Count, Is.Zero);
+        PlayerSaveStore.Delete("account-alpha");
+        Assert.That(PlayerSaveStore.HasSave, Is.True);
     }
 
     private void Register(params ItemDefinition[] items)

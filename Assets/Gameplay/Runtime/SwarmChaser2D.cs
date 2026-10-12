@@ -39,6 +39,12 @@ public sealed class SwarmChaser2D : MonoBehaviour, IDamageable
 
     public bool IsDead => isDead;
 
+    /// <summary>
+    /// 联机客户端为 true：跳过本地 AI 逻辑，但保持注册与可被索敌。
+    /// 禁用组件会注销注册表，导致客户端武器无法索敌。单机恒为 false。
+    /// </summary>
+    public bool NetworkPuppet { get; set; }
+
     /// <summary>当前接触伤害（已含层数缩放）。</summary>
     public float ContactDamage => contactDamage;
 
@@ -145,9 +151,13 @@ public sealed class SwarmChaser2D : MonoBehaviour, IDamageable
 
     private void FixedUpdate()
     {
-        // 本地冻结（联机弹窗）期间虫群停住：世界照常推进，但本机看到的虫群暂停。
-        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
-        if (LocalPauseScope.IsFrozen)
+        // 联机客户端：AI 由主机权威驱动，本端只做表现，跳过全部行为逻辑。
+        if (NetworkPuppet)
+            return;
+
+        // 世界冻结（仅单机暂停）期间虫群停住：联机下世界永不停，虫群照常推进。
+        // 单机下 IsWorldFrozen 与改造前的 timeScale=0 语义一致。
+        if (LocalPauseScope.IsWorldFrozen)
             return;
 
         if (isDead)

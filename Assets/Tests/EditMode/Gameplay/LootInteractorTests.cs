@@ -54,6 +54,65 @@ public sealed class LootInteractorTests
     }
 
     [Test]
+    public void BindRuntime_RebindsPanelWithoutLeavingOldSubscription()
+    {
+        var otherRoot = new GameObject("OtherLootPanel");
+        try
+        {
+            var other = otherRoot.AddComponent<LootPanelController>();
+            interactor.BindRuntime(panel);
+            interactor.BindRuntime(panel);
+            interactor.BindRuntime(other);
+            var subscriptions = typeof(LootPanelController).GetField("ItemSelected", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+            Assert.That(subscriptions.GetValue(panel), Is.Null);
+            Assert.That(((System.Delegate)subscriptions.GetValue(other)).GetInvocationList().Length, Is.EqualTo(1));
+            interactor.BindRuntime(null);
+            Assert.That(subscriptions.GetValue(other), Is.Null);
+        }
+        finally
+        {
+            Object.DestroyImmediate(otherRoot);
+        }
+    }
+
+    [Test]
+    public void PickupResult_AddsMemberLootOnceWithOriginalIdentityAndDurability()
+    {
+        var database = ScriptableObject.CreateInstance<ItemDatabase>();
+        try
+        {
+            var serialized = new SerializedObject(database);
+            var items = serialized.FindProperty("items");
+            items.arraySize = 1;
+            items.GetArrayElementAtIndex(0).objectReferenceValue = item;
+            serialized.ApplyModifiedPropertiesWithoutUndo();
+            var serializedItem = new SerializedObject(item);
+            serializedItem.FindProperty("durability").intValue = 12;
+            serializedItem.ApplyModifiedPropertiesWithoutUndo();
+            instance.RestoreDurability(7);
+            GameSession.EnsureInitialized(database);
+            GameSession.SetLocalPlayerId("member");
+
+            var apply = typeof(DroppedItem2D).GetMethod("ApplyPickupResult", System.Reflection.BindingFlags.Static | System.Reflection.BindingFlags.NonPublic);
+            Assert.That(apply, Is.Not.Null);
+            apply.Invoke(null, new object[] { item.Id, instance.InstanceId, instance.CurrentDurability });
+            apply.Invoke(null, new object[] { item.Id, instance.InstanceId, instance.CurrentDurability });
+
+            var carried = GameSession.LocalPlayer.Raid.GetCarry(0);
+            Assert.That(carried.Definition, Is.SameAs(item));
+            Assert.That(carried.InstanceId, Is.EqualTo(instance.InstanceId));
+            Assert.That(carried.CurrentDurability, Is.EqualTo(instance.CurrentDurability));
+            Assert.That(GameSession.LocalPlayer.Raid.CarryCount(), Is.EqualTo(1));
+            Assert.That(GameSession.LocalPlayer.Raid.Loot.Count, Is.EqualTo(1));
+            Assert.That(GameSession.LocalPlayer.Raid.Loot[0], Is.SameAs(carried));
+        }
+        finally
+        {
+            Object.DestroyImmediate(database);
+        }
+    }
+
+    [Test]
     public void TryPickup_AddsItemToCarryAndDestroysDrop()
     {
         var result = interactor.TryPickup(dropped);

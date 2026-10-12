@@ -31,6 +31,7 @@ public sealed class TowerRunManagerTests
         Object.DestroyImmediate(root);
         Object.DestroyImmediate(config);
         WorldRegistry.ClearForTests();
+        PlayerSaveStore.Delete();
         GameSession.ResetForTests();
     }
 
@@ -56,6 +57,24 @@ public sealed class TowerRunManagerTests
 
         Object.DestroyImmediate(first.Definition);
         Object.DestroyImmediate(second.Definition);
+    }
+
+    [Test]
+    public void ExtractionPayloadSnapshot_SurvivesLocalSettlementClearingRaid()
+    {
+        var loot = TestItems.WeaponInstance("loot");
+        GameSession.LocalPlayer.Raid.TryAddToCarry(loot);
+        GameSession.LocalPlayer.Raid.RecordLoot(loot);
+        var method = typeof(TowerRunManager).GetMethod("BuildExtractionPayload",
+            System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic);
+        var payload = (Tower.Network.ExtractionRequestDto)method.Invoke(manager, null);
+
+        GameSession.ExtractRaid();
+
+        Assert.That(GameSession.LocalPlayer.Raid.Loot, Is.Empty);
+        Assert.That(payload.items.Length, Is.EqualTo(1));
+        Assert.That(payload.items[0].definition_id, Is.EqualTo(loot.Definition.Id));
+        Object.DestroyImmediate(loot.Definition);
     }
 
     [Test]

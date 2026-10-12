@@ -116,9 +116,9 @@ public sealed class Projectile2D : MonoBehaviour
         if (IsExpired)
             return;
 
-        // 本地冻结（联机弹窗）期间子弹停住：世界照常推进，但本机看到的子弹暂停。
-        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
-        if (LocalPauseScope.IsFrozen)
+        // 世界冻结（仅单机暂停）期间弹体停住：联机下世界永不停，弹体照常飞行。
+        // 单机下 IsWorldFrozen 与改造前的 timeScale=0 语义一致。
+        if (LocalPauseScope.IsWorldFrozen)
             return;
 
         age += deltaTime;
@@ -134,7 +134,7 @@ public sealed class Projectile2D : MonoBehaviour
     {
         var target = collision.collider.GetComponentInParent<IDamageable>();
         if (target != null)
-            target.TakeDamage(damage);
+            DealDamage(target);
 
         if (impactPrefab != null)
         {
@@ -152,5 +152,24 @@ public sealed class Projectile2D : MonoBehaviour
         }
 
         Destroy(gameObject);
+    }
+
+    /// <summary>
+    /// 结算伤害。联机下敌人血量是主机权威，客户端命中必须转成 ServerRpc 请求主机结算，
+    /// 否则只改本地血量、主机不知道（表现为「客户端打怪不掉血」）。
+    ///
+    /// 敌人对象上挂有 <see cref="Tower.Netcode.EnemyNetworkSync"/> 时走它转发；
+    /// 没有（单机 / 非网络敌人）则退回直接结算，行为与改造前一致。
+    /// </summary>
+    private void DealDamage(IDamageable target)
+    {
+        var sync = target.transform.GetComponent<Tower.Netcode.EnemyNetworkSync>();
+        if (sync != null)
+        {
+            sync.ApplyDamage(damage);
+            return;
+        }
+
+        target.TakeDamage(damage);
     }
 }

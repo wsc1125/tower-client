@@ -70,7 +70,12 @@ public static class LoginPanelBuilder
 
     /// <summary>密码可见切换按钮（输入框右端）。</summary>
     private static readonly Vector2 EyeButtonSize = new Vector2(46f, 46f);
-    private static readonly Vector2 EyeButtonOffset = new Vector2(-36f, 0f);
+
+    /// <summary>
+    /// 眼睛图标相对密码框中心的偏移。密码框宽 512（半宽 256），图标宽 46，
+    /// 贴右端内侧留 17px 边距：+(256 - 23 - 17) = +216（正数向右）。
+    /// </summary>
+    private static readonly Vector2 EyeButtonOffset = new Vector2(216f, 0f);
 
     /// <summary>头像槽宽度：昵称输入框右侧预留的整块区域。</summary>
     private const float AvatarSlotWidth = 96f;
@@ -273,10 +278,12 @@ public static class LoginPanelBuilder
     }
 
     /// <summary>
-    /// 把登录面板挂进 MainMenu.prefab，并完成三件事：
+    /// 把登录面板挂进 MainMenu.prefab，并完成两件事：
     /// 1. 挂面板实例（放在最上层，遮住主菜单）；
-    /// 2. 在 MainMenu 根节点上挂 <see cref="MainMenuAccountBinder"/>，接线面板与昵称栏；
-    /// 3. 昵称栏右侧新增登出按钮（默认隐藏，登录后才显示）。
+    /// 2. 在 MainMenu 根节点上挂 <see cref="MainMenuAccountBinder"/>，接线面板与昵称栏。
+    ///
+    /// 登出入口已移到主菜单设置面板（见 <see cref="MainMenuSettingsPanelBuilder"/>），
+    /// 这里不再生成左上角的登出按钮。
     /// </summary>
     private static void AttachToMenu(GameObject panelPrefab)
     {
@@ -288,6 +295,7 @@ public static class LoginPanelBuilder
             if (oldPanel != null)
                 Object.DestroyImmediate(oldPanel.gameObject);
 
+            // 清掉历史版本遗留的左上角登出按钮。
             var oldLogout = FindChild(contents.transform, "LogoutButton");
             if (oldLogout != null)
                 Object.DestroyImmediate(oldLogout.gameObject);
@@ -302,16 +310,17 @@ public static class LoginPanelBuilder
             if (playerNameText == null)
                 Debug.LogWarning("[LoginPanelBuilder] 未找到 PlayerName 文本，登录后昵称不会更新。");
 
-            var logoutButton = CreateLogoutButton(contents.transform, playerName);
-
             var binder = contents.GetComponent<MainMenuAccountBinder>();
             if (binder == null)
                 binder = contents.AddComponent<MainMenuAccountBinder>();
 
+            // 设置面板由 MainMenuSettingsPanelBuilder 挂载；这里顺手接线，避免依赖运行时兜底查找。
+            var settingsPanel = contents.GetComponentInChildren<MainMenuSettingsPanelController>(true);
+
             var serialized = new SerializedObject(binder);
             serialized.FindProperty("loginPanel").objectReferenceValue = panel;
             serialized.FindProperty("playerNameText").objectReferenceValue = playerNameText;
-            serialized.FindProperty("logoutButton").objectReferenceValue = logoutButton;
+            serialized.FindProperty("settingsPanel").objectReferenceValue = settingsPanel;
             serialized.ApplyModifiedPropertiesWithoutUndo();
 
             PrefabUtility.SaveAsPrefabAsset(contents, MenuPrefabPath);
@@ -322,41 +331,6 @@ public static class LoginPanelBuilder
             if (!saved)
                 PrefabUtility.UnloadPrefabContents(contents);
         }
-    }
-
-    /// <summary>在昵称栏右侧生成登出按钮（默认隐藏，登录后才显示）。</summary>
-    private static Button CreateLogoutButton(Transform menuRoot, GameObject playerName)
-    {
-        var parent = playerName != null ? playerName.transform.parent : menuRoot;
-
-        var go = new GameObject("LogoutButton", typeof(RectTransform));
-        var rect = (RectTransform)go.transform;
-        rect.SetParent(parent, false);
-        rect.anchorMin = new Vector2(0f, 1f);
-        rect.anchorMax = new Vector2(0f, 1f);
-        rect.pivot = new Vector2(0f, 1f);
-        rect.sizeDelta = new Vector2(150f, 60f);
-        rect.anchoredPosition = new Vector2(520f, -98.2f);
-
-        var image = go.AddComponent<Image>();
-        image.color = UiTokens.LineSoft;
-        image.raycastTarget = true;
-
-        var button = go.AddComponent<Button>();
-        button.targetGraphic = image;
-        button.transition = Selectable.Transition.None;
-
-        var labelRect = CreateRect("Label", rect, new Vector2(150f, 60f), Vector2.zero);
-        var label = labelRect.gameObject.AddComponent<TextMeshProUGUI>();
-        label.text = "登出";
-        label.fontSize = 30f;
-        label.color = UiTokens.TextPrimary;
-        label.alignment = TextAlignmentOptions.Center;
-        label.raycastTarget = false;
-        label.enableWordWrapping = false;
-
-        go.SetActive(false);
-        return button;
     }
 
     private static void BindController(

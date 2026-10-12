@@ -120,9 +120,9 @@ public sealed class CameraFollow2D : MonoBehaviour
         if (target == null || viewCamera == null)
             return;
 
-        // 本地冻结（联机弹窗）期间相机停住：世界照常推进，但本机视角不再跟随。
-        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
-        if (LocalPauseScope.IsFrozen)
+        // 世界冻结（仅单机暂停）期间相机停住：联机下世界永不停，相机照常跟随。
+        // 单机下 IsWorldFrozen 与改造前的 timeScale=0 语义一致。
+        if (LocalPauseScope.IsWorldFrozen)
             return;
 
         if (!hasBounds)

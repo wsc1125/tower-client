@@ -319,16 +319,23 @@ public sealed class BagPanelController : MonoBehaviour
     {
         get
         {
-            if (consumableTarget == null)
+            if (consumableTarget is Component cached && cached == null)
+                consumableTarget = null;
+
+            if (consumableTarget == null ||
+                (consumableTarget is ILocalConsumableTarget local && !local.IsLocalConsumableTarget))
             {
-                if (consumableTargetBehaviour != null)
-                    consumableTarget = consumableTargetBehaviour as IConsumableTarget;
+                consumableTarget = null;
+                if (consumableTargetBehaviour is IConsumableTarget configured &&
+                    (!(configured is ILocalConsumableTarget configuredLocal) || configuredLocal.IsLocalConsumableTarget))
+                    consumableTarget = configured;
 
                 if (consumableTarget == null)
                 {
                     foreach (var candidate in FindObjectsOfType<MonoBehaviour>())
                     {
-                        if (candidate is IConsumableTarget found)
+                        if (candidate is IConsumableTarget found &&
+                            (!(found is ILocalConsumableTarget owner) || owner.IsLocalConsumableTarget))
                         {
                             consumableTarget = found;
                             break;
@@ -390,10 +397,21 @@ public sealed class BagPanelController : MonoBehaviour
             return;
 
         var instance = Bag.GetCarry(selection.Index);
-        if (!ConsumableUseService.TryHeal(instance, Target, out var result))
+        if (Target is IRemoteHealingTarget remote && remote.RequiresRemoteHeal)
+        {
+            ConsumableUseService.TryHealRemote(instance, Target, result =>
+            {
+                if (result.DurabilitySpent <= 0)
+                    return;
+                Bag.NotifyChanged();
+                Refresh();
+            });
+            return;
+        }
+
+        if (!ConsumableUseService.TryHeal(instance, Target, out _))
             return;
 
-        // 耐久变了，通知携带变更（背包格耐久条据此刷新）。
         Bag.NotifyChanged();
         Refresh();
     }

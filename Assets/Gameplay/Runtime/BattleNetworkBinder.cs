@@ -7,7 +7,7 @@ namespace Tower.Netcode
     /// 战斗场景内的联机绑定。
     ///
     /// 只做场景内的事：隐藏单机静态玩家、通知协调器场景就绪。
-    /// 连接建立与场景切换都在常驻层完成，本组件不参与。
+    /// 连接建立与场景切换都在常驻层（MultiplayerCoordinator）完成，本组件不参与。
     /// 单机模式（非联机会话）直接返回，不隐藏静态玩家。
     /// </summary>
     [DisallowMultipleComponent]
@@ -53,6 +53,15 @@ namespace Tower.Netcode
                 cameraFollow = FindObjectOfType<CameraFollow2D>();
 
             HideStaticPlayer();
+
+            // 玩家可能已在主菜单生成，OnNetworkSpawn 当时找不到战斗场景相机。
+            var manager = Unity.Netcode.NetworkManager.Singleton;
+            if (manager != null && manager.IsListening && manager.SpawnManager != null)
+            {
+                var localPlayer = manager.SpawnManager.GetPlayerNetworkObject(manager.LocalClientId);
+                if (localPlayer != null)
+                    AttachLocalCamera(localPlayer.transform);
+            }
 
             // 通知协调器：战斗场景已就绪。
             if (MultiplayerCoordinator.Instance != null)

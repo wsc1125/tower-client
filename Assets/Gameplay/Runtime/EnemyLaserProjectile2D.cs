@@ -1,7 +1,16 @@
+using Unity.Netcode;
 using UnityEngine;
 
+/// <summary>
+/// 敌人激光弹：直线飞行，命中玩家结算伤害。
+///
+/// 联机：由主机生成并 <c>Spawn</c>，参数（方向 / 速度 / 伤害）通过 NetworkVariable 广播，
+/// 客户端只做表现（飞行 + 命中特效），**不结算伤害** —— 伤害是主机权威。
+/// 单机模式下 prefab 上没有 NetworkObject，<see cref="IsSpawned"/> 恒为 false，
+/// 走本地分支，行为与改造前完全一致。
+/// </summary>
 [RequireComponent(typeof(Rigidbody2D))]
-public sealed class EnemyLaserProjectile2D : MonoBehaviour
+public sealed class EnemyLaserProjectile2D : NetworkBehaviour
 {
     [SerializeField] private float damage = 12f;
     [SerializeField] private float lifetime = 3f;
@@ -9,10 +18,26 @@ public sealed class EnemyLaserProjectile2D : MonoBehaviour
     /// <summary>未经层数缩放的基础伤害。</summary>
     private float baseDamage;
 
+    /// <summary>权威方向。主机写入，客户端只读。</summary>
+    private readonly NetworkVariable<Vector2> syncedDirection =
+        new NetworkVariable<Vector2>(Vector2.right, writePerm: NetworkVariableWritePermission.Server);
+
+    /// <summary>权威速度。主机写入，客户端只读。</summary>
+    private readonly NetworkVariable<float> syncedSpeed =
+        new NetworkVariable<float>(7f, writePerm: NetworkVariableWritePermission.Server);
+
+    /// <summary>权威伤害。主机写入，客户端只读。</summary>
+    private readonly NetworkVariable<float> syncedDamage =
+        new NetworkVariable<float>(12f, writePerm: NetworkVariableWritePermission.Server);
+
     private Rigidbody2D body;
     private Vector2 direction = Vector2.right;
     private float speed = 7f;
     private float age;
+    private bool launched;
+
+    /// <summary>本端是否为权威端（主机 / 单机）。</summary>
+    private bool IsAuthority => !IsSpawned || IsServer;
 
     public static Quaternion GetRotation(Vector2 travelDirection)
     {
@@ -35,14 +60,84 @@ public sealed class EnemyLaserProjectile2D : MonoBehaviour
         damage = baseDamage * multiplier;
     }
 
+    private void Awake()
+    {
+        body = GetComponent<Rigidbody2D>();
+    }
+
+    public override void OnNetworkSpawn()
+    {
+        base.OnNetworkSpawn();
+
+        if (IsServer)
+        {
+            // 主机：此时 NetworkVariable 已初始化，写入会正常标记 dirty 并同步给客户端。
+            // 必须在 OnNetworkSpawn 里写（而非 Spawn 之前）—— Spawn 前写入不会标记 dirty，
+            // 参数不会同步（NGO 会打 "doesn't know its NetworkBehaviour yet" 警告）。
+            syncedDirection.Value = direction;
+            syncedSpeed.Value = speed;
+            syncedDamage.Value = damage;
+        }
+        else
+        {
+            // 客户端：先按当前值启动表现，再订阅变化 —— 主机写入的 Delta 可能晚一帧到达，
+            // 届时通过 OnValueChanged 修正方向与速度。
+            ApplyAuthoritativeParams(syncedDirection.Value, syncedSpeed.Value);
+            syncedDirection.OnValueChanged += HandleDirectionChanged;
+            syncedSpeed.OnValueChanged += HandleSpeedChanged;
+        }
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        if (!IsServer)
+        {
+            syncedDirection.OnValueChanged -= HandleDirectionChanged;
+            syncedSpeed.OnValueChanged -= HandleSpeedChanged;
+        }
+
+        base.OnNetworkDespawn();
+    }
+
+    private void HandleDirectionChanged(Vector2 previous, Vector2 current)
+    {
+        ApplyAuthoritativeParams(current, syncedSpeed.Value);
+    }
+
+    private void HandleSpeedChanged(float previous, float current)
+    {
+        ApplyAuthoritativeParams(syncedDirection.Value, current);
+    }
+
+    /// <summary>
+    /// 发射。主机调用后参数会被广播；客户端不调用本方法（由 OnNetworkSpawn 读取权威值）。
+    /// </summary>
     public void Launch(Vector2 launchDirection, float launchSpeed, Collider2D ownerCollider = null)
     {
         direction = launchDirection.sqrMagnitude > 0.0001f ? launchDirection.normalized : Vector2.right;
         speed = launchSpeed;
         transform.rotation = GetRotation(direction);
+        launched = true;
 
         if (ownerCollider != null)
             IgnoreCollisionWith(ownerCollider);
+
+        // 联机主机：若已 Spawn（例如运行时改参数），立即同步。
+        if (IsSpawned && IsServer)
+        {
+            syncedDirection.Value = direction;
+            syncedSpeed.Value = speed;
+            syncedDamage.Value = damage;
+        }
+    }
+
+    /// <summary>客户端按权威参数启动表现。</summary>
+    private void ApplyAuthoritativeParams(Vector2 dir, float spd)
+    {
+        direction = dir.sqrMagnitude > 0.0001f ? dir.normalized : Vector2.right;
+        speed = spd;
+        transform.rotation = GetRotation(direction);
+        launched = true;
     }
 
     /// <summary>
@@ -73,23 +168,21 @@ public sealed class EnemyLaserProjectile2D : MonoBehaviour
         }
     }
 
-    private void Awake()
-    {
-        body = GetComponent<Rigidbody2D>();
-    }
-
     private void FixedUpdate()
     {
-        // 本地冻结（联机弹窗）期间弹幕停住：世界照常推进，但本机看到的弹幕暂停。
-        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
-        if (LocalPauseScope.IsFrozen)
+        if (!launched)
+            return;
+
+        // 世界冻结（仅单机暂停）期间弹幕停住：联机下世界永不停，弹幕照常飞行。
+        // 单机下 IsWorldFrozen 与改造前的 timeScale=0 语义一致。
+        if (LocalPauseScope.IsWorldFrozen)
             return;
 
         age += Time.fixedDeltaTime;
         body.MovePosition(body.position + direction * (speed * Time.fixedDeltaTime));
 
         if (age >= lifetime)
-            Destroy(gameObject);
+            DespawnSelf();
     }
 
     private void OnTriggerEnter2D(Collider2D other)
@@ -99,7 +192,7 @@ public sealed class EnemyLaserProjectile2D : MonoBehaviour
         // 若先判玩家，贴着掩体站位的玩家会「隔着掩体被打中」。
         if (other.GetComponentInParent<Obstacle2D>() != null)
         {
-            Destroy(gameObject);
+            DespawnSelf();
             return;
         }
 
@@ -108,7 +201,24 @@ public sealed class EnemyLaserProjectile2D : MonoBehaviour
         if (playerHealth == null)
             return;
 
-        playerHealth.TakeDamage(damage);
+        // 伤害只在权威端结算：客户端命中不结算，避免各端血量不一致。
+        if (IsAuthority)
+            playerHealth.TakeDamage(syncedDamage.Value > 0f ? syncedDamage.Value : damage);
+
+        DespawnSelf();
+    }
+
+    /// <summary>
+    /// 销毁自身。联机下**只有主机能销毁已 Spawn 的 NetworkObject** ——
+    /// 客户端本地 Destroy 会报「Destroy a spawned NetworkObject on a non-host client is not valid」，
+    /// 且不会通知主机，导致两端状态不一致。
+    /// 客户端什么都不做，等主机的 Despawn 消息到达后由 NGO 自动销毁。
+    /// </summary>
+    private void DespawnSelf()
+    {
+        if (IsSpawned && !IsServer)
+            return;
+
         Destroy(gameObject);
     }
 }

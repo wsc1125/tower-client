@@ -28,6 +28,7 @@ public sealed class WeaponMountSlot : MonoBehaviour
     [SerializeField] private float targetWorldWidth;
 
     private PlayerWeaponSelector subscribedSelector;
+    private bool remoteDriven;
 
     /// <summary>手上当前可见、可攻击的武器；被切走或未装备时为 false。</summary>
     public bool HasWeapon => weaponRenderer != null
@@ -56,8 +57,76 @@ public sealed class WeaponMountSlot : MonoBehaviour
     /// <summary>枪口火光渲染器。开火时短暂显示。</summary>
     public SpriteRenderer MuzzleFlash => muzzleFlash;
 
+    /// <summary>
+    /// 切换为远端驱动模式：不再订阅本机装备事件，显示内容完全由
+    /// <see cref="ApplyRemoteState"/> 按网络同步值落地。
+    /// 供联机远端玩家使用 —— 远端对象的武器数据来自 owner 广播，而非本机装备。
+    /// </summary>
+    public void SetRemoteDriven(bool value)
+    {
+        if (remoteDriven == value)
+            return;
+
+        remoteDriven = value;
+
+        if (value)
+            Unsubscribe();
+        else
+            Subscribe();
+    }
+
+    /// <summary>
+    /// 远端武器视图专用：直接落地贴图与选中态，不读 <c>GameSession.LocalPlayer</c>。
+    /// 单机与 owner 本机不走这里，因此不影响原有显示逻辑。
+    /// </summary>
+    public void ApplyRemoteState(ItemDefinition definition, bool selected)
+    {
+        if (weaponRenderer == null)
+            return;
+
+        var sprite = definition != null ? definition.WorldSprite : null;
+        weaponRenderer.sprite = sprite;
+        weaponRenderer.enabled = sprite != null && selected;
+
+        ApplySpriteScale(sprite);
+    }
+
+    /// <summary>按本机装备刷新一次。供 owner 绑定后强制落地，消除时序依赖。</summary>
+    public void RefreshFromLocal()
+    {
+        Refresh();
+    }
+
+    /// <summary>测试用：注入渲染器引用。</summary>
+    public void BindRendererForTests(SpriteRenderer renderer)
+    {
+        weaponRenderer = renderer;
+    }
+
     private void OnEnable()
     {
+        Subscribe();
+        Refresh();
+    }
+
+    /// <summary>
+    /// 运行时接线。联机动态生成的玩家来自 prefab，而 prefab 无法序列化场景内引用
+    /// （selector 在玩家对象上，但 prefab 里该字段为空），因此必须在生成后补接。
+    /// 不接线会导致 <see cref="IsSelected"/> 判定失效、武器显示错乱。
+    /// </summary>
+    public void BindRuntime(PlayerWeaponSelector weaponSelector)
+    {
+        if (weaponSelector == null || weaponSelector == selector)
+            return;
+
+        // 先退订旧 selector，避免重复订阅。
+        if (subscribedSelector != null)
+        {
+            subscribedSelector.Changed -= Refresh;
+            subscribedSelector = null;
+        }
+
+        selector = weaponSelector;
         Subscribe();
         Refresh();
     }
@@ -76,6 +145,8 @@ public sealed class WeaponMountSlot : MonoBehaviour
         }
 
         // 武器读的是装备槽，而装备槽与局外是同一份，因此订阅 LoadoutChanged。
+        // 先退订再加，避免 OnEnable 与 BindRuntime 各订阅一次导致重复回调与悬挂引用。
+        GameSession.LoadoutChanged -= Refresh;
         GameSession.LoadoutChanged += Refresh;
     }
 
@@ -92,6 +163,10 @@ public sealed class WeaponMountSlot : MonoBehaviour
 
     private void Refresh()
     {
+        // 远端驱动模式下显示内容由 ApplyRemoteState 决定，本机装备事件不得覆盖。
+        if (remoteDriven)
+            return;
+
         if (weaponRenderer == null)
             return;
 

@@ -41,8 +41,27 @@ public sealed class SpawnerSummoner2D : MonoBehaviour
         {
             var angle = 360f * i / Mathf.Max(1, count);
             var offset = Quaternion.Euler(0f, 0f, angle) * (Vector3)(Vector2.down * spawnRadius);
-            Instantiate(swarmPrefab, transform.position + offset, Quaternion.identity);
+            var swarm = Instantiate(swarmPrefab, transform.position + offset, Quaternion.identity);
+
+            // 联机主机：把虫群注册进 NGO，由 NGO 自动同步到所有客户端。
+            // 客户端不生成虫群（母巢 AI 已被禁用，不会走到这里）。
+            SpawnIfServer(swarm);
         }
+    }
+
+    /// <summary>
+    /// 联机主机：把运行时生成的虫群注册进 NGO，由 NGO 自动同步到所有客户端。
+    /// 单机时 NetworkManager 未启动，直接跳过，行为与改造前一致。
+    /// </summary>
+    private static void SpawnIfServer(GameObject target)
+    {
+        var nm = Unity.Netcode.NetworkManager.Singleton;
+        if (nm == null || !nm.IsListening || !nm.IsServer)
+            return;
+
+        var netObj = target.GetComponent<Unity.Netcode.NetworkObject>();
+        if (netObj != null && !netObj.IsSpawned)
+            netObj.Spawn(true);
     }
 
     private int CountAliveSwarms()

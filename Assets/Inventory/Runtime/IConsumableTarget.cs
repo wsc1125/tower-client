@@ -4,6 +4,17 @@
 /// 抽成接口是为了让 <see cref="ConsumableUseService"/> 留在 Inventory 程序集：
 /// 局内背包（BattleHUD）与携带容器（Inventory）都要用它，而 Inventory 不能反向依赖 Gameplay。
 /// </summary>
+public interface ILocalConsumableTarget
+{
+    bool IsLocalConsumableTarget { get; }
+}
+
+public interface IRemoteHealingTarget
+{
+    bool RequiresRemoteHeal { get; }
+    bool RequestHeal(float amount, System.Action<float> completed);
+}
+
 public interface IConsumableTarget
 {
     /// <summary>已死亡时任何消耗品都不生效。</summary>

@@ -135,6 +135,8 @@ GameObject:
   - component: {fileID: 8016796085163746422}
   - component: {fileID: 3674646139392354821}
   - component: {fileID: 3572582398455271507}
+  - component: {fileID: 727207043594368156}
+  - component: {fileID: 3103212245299287645}
   m_Layer: 0
   m_Name: Enemy_Spawner
   m_TagString: Untagged
@@ -272,3 +274,36 @@ MonoBehaviour:
   spawnCountPerAttack: 3
   spawnRadius: 0.7
   maxAliveSwarms: 12
+--- !u!114 &727207043594368156
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2133316156098121915}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GlobalObjectIdHash: 951099334
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+--- !u!114 &3103212245299287645
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2133316156098121915}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 45a4f7a7f6d818446b30492bd1d8f632, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  positionLerpSpeed: 15

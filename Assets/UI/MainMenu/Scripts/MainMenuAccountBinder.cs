@@ -24,8 +24,8 @@ public sealed class MainMenuAccountBinder : MonoBehaviour
     [Tooltip("主菜单左上角的昵称文本。")]
     [SerializeField] private TMP_Text playerNameText;
 
-    [Tooltip("登出按钮。可选；未接线时不显示登出入口。")]
-    [SerializeField] private Button logoutButton;
+    [Tooltip("主菜单设置面板。登出入口在面板里；留空则自动在子层级里查找。")]
+    [SerializeField] private MainMenuSettingsPanelController settingsPanel;
 
     [Header("行为")]
     [Tooltip("场景启动时自动弹出登录面板。")]
@@ -44,11 +44,14 @@ public sealed class MainMenuAccountBinder : MonoBehaviour
         if (loginPanel == null)
             loginPanel = GetComponentInChildren<LoginPanelController>(true);
 
+        if (settingsPanel == null)
+            settingsPanel = GetComponentInChildren<MainMenuSettingsPanelController>(true);
+
         if (loginPanel != null)
             loginPanel.SubmitRequested += OnSubmitRequested;
 
-        if (logoutButton != null)
-            logoutButton.onClick.AddListener(OnLogoutClicked);
+        if (settingsPanel != null)
+            settingsPanel.LogoutRequested += OnLogoutClicked;
     }
 
     private void Start()
@@ -76,8 +79,8 @@ public sealed class MainMenuAccountBinder : MonoBehaviour
         if (loginPanel != null)
             loginPanel.SubmitRequested -= OnSubmitRequested;
 
-        if (logoutButton != null)
-            logoutButton.onClick.RemoveListener(OnLogoutClicked);
+        if (settingsPanel != null)
+            settingsPanel.LogoutRequested -= OnLogoutClicked;
 
         if (session != null)
         {
@@ -122,9 +125,6 @@ public sealed class MainMenuAccountBinder : MonoBehaviour
                 ? account?.username
                 : account.display_name;
 
-        if (logoutButton != null)
-            logoutButton.gameObject.SetActive(true);
-
         if (closeOnSuccess)
             loginPanel?.Close();
     }
@@ -134,8 +134,8 @@ public sealed class MainMenuAccountBinder : MonoBehaviour
         if (playerNameText != null)
             playerNameText.text = guestName;
 
-        if (logoutButton != null)
-            logoutButton.gameObject.SetActive(false);
+        // 登出后收起设置面板，避免面板残留在登录界面之上。
+        settingsPanel?.Close();
 
         loginPanel?.Open();
     }

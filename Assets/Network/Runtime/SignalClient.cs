@@ -71,9 +71,6 @@ namespace Tower.Network
         /// <summary>房主发起开始游戏。</summary>
         public event Action<GameStartingPayload> GameStarting;
 
-        /// <summary>收到本局游戏会话信息。</summary>
-        public event Action<GameSessionPayload> GameSessionReceived;
-
         /// <summary>房主迁移。客户端据此执行权威接管。</summary>
         public event Action<HostChangedPayload> HostChanged;
 
@@ -352,10 +349,6 @@ namespace Tower.Network
 
                 case SignalType.GameStarting:
                     GameStarting?.Invoke(Parse<GameStartingPayload>(envelope.payload));
-                    break;
-
-                case SignalType.GameSession:
-                    GameSessionReceived?.Invoke(Parse<GameSessionPayload>(envelope.payload));
                     break;
 
                 case SignalType.HostChanged:

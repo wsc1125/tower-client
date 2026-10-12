@@ -71,14 +71,18 @@ namespace Tower.Netcode
                 yield break;
             }
 
-            // 服务器端直接改位置；客户端由 PlayerNetworkSync 的 owner 上报覆盖，
-            // 因此这里只需在 Host（服务器）上摆一次即可全局生效。
             var target = ResolveSpawnPosition();
-            var body = born.GetComponent<Rigidbody2D>();
-            if (body != null)
-                body.position = target;
+            var sync = born.GetComponent<PlayerNetworkSync>();
+            if (sync != null)
+                sync.TeleportTo(target);
+            else
+            {
+                var body = born.GetComponent<Rigidbody2D>();
+                if (body != null)
+                    body.position = target;
 
-            born.transform.position = new Vector3(target.x, target.y, born.transform.position.z);
+                born.transform.position = new Vector3(target.x, target.y, born.transform.position.z);
+            }
 
             Debug.Log($"[NetworkPlayerSpawner] 客户端 {clientId} 的玩家已摆到 {target}");
         }

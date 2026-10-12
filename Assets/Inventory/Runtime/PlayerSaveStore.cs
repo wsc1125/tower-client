@@ -15,21 +15,29 @@ public static class PlayerSaveStore
     /// <summary>旧版存档键，仅用于一次性迁移。</summary>
     private const string LegacyPrefsKey = "PlayerInventory";
 
-    public static bool HasSave => PlayerPrefs.HasKey(PrefsKey) || PlayerPrefs.HasKey(LegacyPrefsKey);
+    public static bool HasSave => HasSaveFor(null);
+
+    private static string KeyFor(string playerId) =>
+        string.IsNullOrEmpty(playerId) || playerId == GameSession.LocalPlayerId
+            ? PrefsKey : PrefsKey + ":account:" + playerId;
+
+    public static bool HasSaveFor(string playerId) => PlayerPrefs.HasKey(KeyFor(playerId)) ||
+        (KeyFor(playerId) == PrefsKey && PlayerPrefs.HasKey(LegacyPrefsKey));
 
     /// <summary>读取存档。缺失或解析失败时返回空数据，并保留诊断信息。</summary>
-    public static PlayerSaveData Load()
+    public static PlayerSaveData Load(string playerId = null)
     {
-        if (PlayerPrefs.HasKey(PrefsKey))
+        var key = KeyFor(playerId);
+        if (PlayerPrefs.HasKey(key))
         {
-            var json = PlayerPrefs.GetString(PrefsKey, string.Empty);
+            var json = PlayerPrefs.GetString(key, string.Empty);
             var data = Parse(json);
             if (data != null)
                 return data;
         }
 
         // 新键不存在或损坏时，尝试从旧格式迁移一次。
-        if (PlayerPrefs.HasKey(LegacyPrefsKey))
+        if (key == PrefsKey && PlayerPrefs.HasKey(LegacyPrefsKey))
         {
             var migrated = MigrateLegacy();
             if (migrated != null)
@@ -44,28 +52,29 @@ public static class PlayerSaveStore
     }
 
     /// <summary>把局外数据写入存档。只调用 PlayerPrefs.SetString，真正落盘由 <see cref="Flush"/> 完成。</summary>
-    public static void Save(PlayerLoadout loadout)
+    public static void Save(PlayerLoadout loadout, string playerId = null)
     {
-        Save(Capture(loadout));
+        Save(Capture(loadout), playerId);
     }
 
-    public static void Save(PlayerSaveData data)
+    public static void Save(PlayerSaveData data, string playerId = null)
     {
         if (data == null)
             return;
 
         data.version = PlayerSaveData.CurrentVersion;
-        PlayerPrefs.SetString(PrefsKey, JsonUtility.ToJson(data));
+        PlayerPrefs.SetString(KeyFor(playerId), JsonUtility.ToJson(data));
     }
 
     /// <summary>立即落盘。切后台、退出或切换场景时调用。</summary>
     public static void Flush() => PlayerPrefs.Save();
 
     /// <summary>删除存档，主要用于测试与「重新开始」。</summary>
-    public static void Delete()
+    public static void Delete(string playerId = null)
     {
-        PlayerPrefs.DeleteKey(PrefsKey);
-        PlayerPrefs.DeleteKey(LegacyPrefsKey);
+        PlayerPrefs.DeleteKey(KeyFor(playerId));
+        if (KeyFor(playerId) == PrefsKey)
+            PlayerPrefs.DeleteKey(LegacyPrefsKey);
         PlayerPrefs.Save();
     }
 

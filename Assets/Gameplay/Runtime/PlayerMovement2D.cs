@@ -9,6 +9,7 @@ public class PlayerMovement2D : MonoBehaviour
     [SerializeField] private CharacterVisual2D visual;
 
     private Vector2 resolvedInput;
+    private bool keepTargetRegistrationWhenDisabled;
 
     public Vector2 ResolvedInput => resolvedInput;
 
@@ -35,12 +36,25 @@ public class PlayerMovement2D : MonoBehaviour
         }
     }
 
+    public void KeepTargetRegistrationWhenDisabled(bool value)
+    {
+        keepTargetRegistrationWhenDisabled = value;
+        if (value)
+            WorldRegistry.Register(this);
+    }
+
     private void OnEnable()
     {
         WorldRegistry.Register(this);
     }
 
     private void OnDisable()
+    {
+        if (!keepTargetRegistrationWhenDisabled)
+            WorldRegistry.Unregister(this);
+    }
+
+    private void OnDestroy()
     {
         WorldRegistry.Unregister(this);
     }

@@ -51,9 +51,9 @@ public sealed class BossVisual2D : MonoBehaviour
     /// <param name="facing">朝向玩家的方向，仅用于水平翻转。</param>
     public bool Step(bool phaseTwo, bool attacking, Vector2 facing, float deltaTime)
     {
-        // 本地冻结（联机弹窗）期间动画停住：世界照常推进，但 BOSS 看起来是静止的。
-        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
-        if (LocalPauseScope.IsFrozen)
+        // 世界冻结（仅单机暂停）期间动画停住：联机下世界永不停，BOSS 动画照常推进。
+        // 单机下 IsWorldFrozen 与改造前的 timeScale=0 语义一致。
+        if (LocalPauseScope.IsWorldFrozen)
             return false;
 
         var dead = false;

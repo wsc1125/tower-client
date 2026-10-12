@@ -122,6 +122,8 @@ GameObject:
   - component: {fileID: 8349258456190930510}
   - component: {fileID: 7379825143412751851}
   - component: {fileID: 3960689006390789252}
+  - component: {fileID: 6302385436200174345}
+  - component: {fileID: 1711883192712473356}
   m_Layer: 0
   m_Name: Enemy_Swarm
   m_TagString: Untagged
@@ -227,3 +229,36 @@ MonoBehaviour:
   maximumHealth: 12
   visual: {fileID: 6604945461275871378}
   bodyCollider: {fileID: 7379825143412751851}
+--- !u!114 &6302385436200174345
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7467877563866519494}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GlobalObjectIdHash: 951099334
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
+--- !u!114 &1711883192712473356
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7467877563866519494}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 45a4f7a7f6d818446b30492bd1d8f632, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  positionLerpSpeed: 15

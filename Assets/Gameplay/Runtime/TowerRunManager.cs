@@ -29,7 +29,11 @@ public sealed class TowerRunManager : MonoBehaviour
     [SerializeField] private PortalConfirmPanelController portalConfirmPanel;
     [SerializeField] private SettingsPanelController settingsPanel;
     [SerializeField] private PlayerHealth2D playerHealth;
+    [SerializeField] private DeathPanelController deathPanel;
     [SerializeField] private string mainMenuSceneName = "MainMenu";
+
+    [Tooltip("联机全员阵亡提示显示时长（秒，使用 unscaled time）。")]
+    [SerializeField] private float teamWipeExitDelay = 2f;
 
     [Header("节奏")]
     [SerializeField] private float portalSpawnDelay = 0.6f;
@@ -44,6 +48,9 @@ public sealed class TowerRunManager : MonoBehaviour
     [Tooltip("敌人巡逻路径的半宽。以出生点为中心水平往返。")]
     [SerializeField] private float enemyPatrolHalfWidth = 1.5f;
 
+    [Tooltip("联机全员撤离倒计时（秒）。所有存活玩家进入撤退阵后开始，给反悔窗口。")]
+    [SerializeField] private float extractionCountdownSeconds = 3f;
+
     [Header("随机")]
     [Tooltip("本局的随机种子。0 表示每局自动生成（单机默认）；非 0 则固定，便于复现问题。\n" +
              "联机时由主机生成并广播给所有客户端，保证各端生成同一层。")]
@@ -52,6 +59,13 @@ public sealed class TowerRunManager : MonoBehaviour
     private readonly TowerRunState state = new TowerRunState();
     private readonly List<GameObject> spawnedEnemies = new List<GameObject>();
     private readonly List<FloorPortal2D> spawnedPortals = new List<FloorPortal2D>();
+
+    /// <summary>已订阅事件的传送点（含客户端 NGO 同步来的），避免重复订阅。</summary>
+    private readonly HashSet<FloorPortal2D> subscribedPortals = new HashSet<FloorPortal2D>();
+
+    /// <summary>已订阅死亡 / 退出事件的玩家同步组件，避免重复订阅。</summary>
+    private readonly HashSet<Tower.Netcode.PlayerNetworkSync> subscribedPlayers =
+        new HashSet<Tower.Netcode.PlayerNetworkSync>();
     private GameObject currentRoom;
     private System.Random random;
     private float clearTimer;
@@ -59,6 +73,15 @@ public sealed class TowerRunManager : MonoBehaviour
     private bool subscribedDeath;
     private bool subscribedPortalConfirm;
     private bool subscribedSettings;
+    private bool subscribedRunFinished;
+    private bool floorBuilt;
+    private bool runFinishedHandled;
+    private bool exitingBattle;
+    private bool subscribedDisconnect;
+
+    /// <summary>联机全员撤离倒计时剩余秒数。-1 表示未在倒计时。</summary>
+    private float extractionCountdown = -1f;
+    private int lastTeamAdvanceFrame = -1;
 
     /// <summary>本局实际使用的随机种子。0 表示尚未确定（Awake 时会自动生成）。</summary>
     public int RandomSeed => randomSeed;
@@ -135,6 +158,11 @@ public sealed class TowerRunManager : MonoBehaviour
 
         SubscribePortalConfirm();
         SubscribeSettings();
+        SubscribeDisconnectCallback();
+
+        // BattleSessionState 是场景内 NetworkObject，OnNetworkSpawn 晚于本组件 OnEnable，
+        // 此刻 Instance 可能为 null。用协程重试，直到订阅成功。
+        StartCoroutine(SubscribeRunFinishedWhenReady());
     }
 
     private void OnDisable()
@@ -147,6 +175,173 @@ public sealed class TowerRunManager : MonoBehaviour
 
         UnsubscribePortalConfirm();
         UnsubscribeSettings();
+        UnsubscribeRunFinished();
+        UnsubscribeDisconnectCallback();
+
+        foreach (var sync in subscribedPlayers)
+        {
+            if (sync == null)
+                continue;
+
+            sync.PlayerDied -= HandlePlayerDiedNetwork;
+            sync.PlayerQuit -= HandlePlayerQuitNetwork;
+        }
+        subscribedPlayers.Clear();
+    }
+
+    /// <summary>
+    /// 等 BattleSessionState 就绪后订阅「本局结束」与「层数变化」广播。
+    ///
+    /// 不能直接在 OnEnable 里订阅：BattleSessionState 由 NGO 在场景同步时生成，
+    /// 晚于本组件 OnEnable，此刻 Instance 为 null，订阅会被静默跳过 ——
+    /// 房主广播本局结束时客户端收不到，成员会滞留在战斗场景。
+    /// </summary>
+    private IEnumerator SubscribeRunFinishedWhenReady()
+    {
+        var deadline = Time.realtimeSinceStartup + 30f;
+        while (Time.realtimeSinceStartup < deadline)
+        {
+            var sessionState = Tower.Netcode.BattleSessionState.Instance;
+            if (sessionState != null)
+            {
+                sessionState.RunFinishedChanged += HandleRunFinished;
+                sessionState.FloorChanged += HandleFloorChanged;
+                subscribedRunFinished = true;
+
+                // 网络变量可能早于事件订阅到达，订阅后补读当前状态。
+                if (sessionState.RunFinished)
+                    HandleRunFinished();
+                HandleFloorChanged(sessionState.CurrentFloor);
+                yield break;
+            }
+
+            yield return null;
+        }
+
+        Debug.LogError("[TowerRunManager] 等待 BattleSessionState 超时，本局结束广播将无法接收。");
+    }
+
+    /// <summary>
+    /// 订阅「本局结束」广播。主机标记结束后，所有客户端据此退出战斗回主菜单，
+    /// 否则房主死亡时成员会滞留在战斗场景里。
+    /// </summary>
+    private void SubscribeRunFinished()
+    {
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState == null)
+            return;
+
+        sessionState.RunFinishedChanged += HandleRunFinished;
+        sessionState.FloorChanged += HandleFloorChanged;
+        subscribedRunFinished = true;
+
+        if (sessionState.RunFinished)
+            HandleRunFinished();
+        HandleFloorChanged(sessionState.CurrentFloor);
+    }
+
+    private void UnsubscribeRunFinished()
+    {
+        if (!subscribedRunFinished)
+            return;
+
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState != null)
+        {
+            sessionState.RunFinishedChanged -= HandleRunFinished;
+            sessionState.FloorChanged -= HandleFloorChanged;
+        }
+
+        subscribedRunFinished = false;
+    }
+
+    /// <summary>
+    /// 主机广播了新层数：客户端跟随换层。
+    ///
+    /// 客户端本地不执行换层，由主机权威驱动，保证各端层数一致。
+    /// </summary>
+    private void HandleFloorChanged(int floor)
+    {
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState == null || sessionState.IsServer || !floorBuilt || state.IsFinished)
+            return;
+
+        if (floor <= state.CurrentFloor)
+            return;
+
+        Debug.Log($"[TowerRunManager] 主机换层到第 {floor} 层，客户端跟随。");
+
+        // 把本地层数推进到主机广播的层数，再重建该层。
+        while (state.CurrentFloor < floor)
+            state.AdvanceFloor();
+
+        BuildFloor(state.CurrentFloor);
+    }
+
+    /// <summary>
+    /// 本局结束（主机广播）。客户端收到后退出房间并回主菜单。
+    /// 主机自身由死亡 / 撤退流程负责退出，这里不重复处理。
+    /// </summary>
+    private void HandleRunFinished()
+    {
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState == null || !sessionState.RunFinished || runFinishedHandled)
+            return;
+
+        // 正常撤离保留原结算确认流程；客户端收到主机广播后也展示本地结算。
+        if (sessionState.FinishReason == Tower.Netcode.BattleFinishReason.Extracted)
+        {
+            runFinishedHandled = true;
+            if (!sessionState.IsServer)
+            {
+                state.Finish();
+                ClearFloor();
+                if (resultPanel != null)
+                    resultPanel.Show(BuildResultEntries(), TotalLootValue(), state.CurrentFloor);
+            }
+            return;
+        }
+
+        if (sessionState.FinishReason != Tower.Netcode.BattleFinishReason.TeamWiped)
+        {
+            runFinishedHandled = true;
+            StartCoroutine(ExitToMainMenu());
+            return;
+        }
+
+        runFinishedHandled = true;
+        LocalPauseScope.Freeze();
+
+        if (deathPanel == null)
+            deathPanel = FindObjectOfType<DeathPanelController>();
+        if (deathPanel != null)
+            deathPanel.ShowAutoExit("全员阵亡", "所有队员均已倒下，即将返回主菜单");
+
+        StartCoroutine(ExitAfterTeamWipeDelay());
+    }
+
+    private IEnumerator ExitAfterTeamWipeDelay()
+    {
+        var remaining = Mathf.Max(0f, teamWipeExitDelay);
+        while (remaining > 0f)
+        {
+            remaining -= Time.unscaledDeltaTime;
+            yield return null;
+        }
+
+        GameSession.AbandonRaid();
+        yield return ExitToMainMenu();
+    }
+
+    /// <summary>
+    /// 广播「本局结束」。仅主机生效。
+    /// 房主死亡 / 撤退时调用，让所有成员同步退出战斗场景。
+    /// </summary>
+    public void BroadcastRunFinished(Tower.Netcode.BattleFinishReason reason = Tower.Netcode.BattleFinishReason.HostClosed)
+    {
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState != null && sessionState.IsServer)
+            sessionState.MarkRunFinished(reason);
     }
 
     /// <summary>
@@ -226,12 +421,118 @@ public sealed class TowerRunManager : MonoBehaviour
     private void Start()
     {
         state.BeginRun();
+
+        // 延后一帧：联机时 BattleSessionState 的 OnNetworkSpawn 可能晚于本组件的 Start，
+        // 直接读 Seed 会拿到默认值 0，导致各端生成不同的层。
+        StartCoroutine(StartAfterSessionReady());
+    }
+
+    /// <summary>
+    /// 等会话就绪后再生成第一层。
+    ///
+    /// 单机：直接生成。
+    /// 联机主机：生成权威种子写入 BattleSessionState，再生成。
+    /// 联机客户端：等主机广播的种子到达后再生成，保证各端同一层。
+    /// </summary>
+    private IEnumerator StartAfterSessionReady()
+    {
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        var networkManager = Unity.Netcode.NetworkManager.Singleton;
+        if (sessionState == null && networkManager != null && networkManager.IsListening)
+        {
+            var sessionDeadline = Time.realtimeSinceStartup + 30f;
+            while (sessionState == null && Time.realtimeSinceStartup < sessionDeadline)
+            {
+                yield return null;
+                sessionState = Tower.Netcode.BattleSessionState.Instance;
+            }
+
+            if (sessionState == null)
+            {
+                Debug.LogError("[TowerRunManager] 等待 BattleSessionState 超时，本层未生成。");
+                yield break;
+            }
+        }
+
+        if (sessionState == null)
+        {
+            BuildFloorOnce();
+            yield break;
+        }
+
+        if (sessionState.IsServer)
+        {
+            // 主机：种子为 0 时用本机随机源生成一个，写入网络变量广播出去。
+            var seed = randomSeed != 0 ? randomSeed : Environment.TickCount;
+            sessionState.SetSeed(seed);
+            SetRandomSeed(seed);
+            BuildFloorOnce();
+            yield break;
+        }
+
+        // 客户端：等种子。
+        if (sessionState.Seed != 0)
+        {
+            SetRandomSeed(sessionState.Seed);
+            BuildFloorOnce();
+            yield break;
+        }
+
+        sessionState.SeedReady += HandleSeedReady;
+
+        var deadline = Time.realtimeSinceStartup + 30f;
+        while (!floorBuilt && Time.realtimeSinceStartup < deadline)
+            yield return null;
+
+        sessionState.SeedReady -= HandleSeedReady;
+
+        if (!floorBuilt)
+            Debug.LogError("[TowerRunManager] 等待主机种子超时，本层未生成。");
+    }
+
+    private void HandleSeedReady(int seed)
+    {
+        if (floorBuilt)
+            return;
+
+        SetRandomSeed(seed);
+        BuildFloorOnce();
+    }
+
+    private void BuildFloorOnce()
+    {
+        if (floorBuilt)
+            return;
+
+        floorBuilt = true;
         BuildFloor(state.CurrentFloor);
+
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState != null && !sessionState.IsServer)
+            HandleFloorChanged(sessionState.CurrentFloor);
     }
 
     private void Update()
     {
-        if (state.IsFinished || portalsSpawned)
+        // 每帧补订传送点事件：客户端由 NGO 同步来的传送点不在本地生成路径里，
+        // 只能从静态注册表补订。幂等，已订阅的会跳过。
+        SubscribePortals();
+
+        // 主机：补订玩家死亡 / 退出事件，维护存活计数（全员死亡判定）。
+        SubscribePlayerLifecycle();
+
+        // 主机：联机传送门由全队站位决定。
+        UpdateTeamExtraction();
+        UpdateTeamNextFloor();
+
+        if (!floorBuilt || state.IsFinished || portalsSpawned)
+            return;
+
+        // 联机客户端：清空检测与传送门生成由主机权威决定。
+        // 客户端本地 spawnedEnemies 为空（敌人由 NGO 同步），IsFloorCleared 会恒为 true，
+        // 导致开局瞬间错误生成传送门。客户端只等主机广播层数后跟随。
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState != null && !sessionState.IsServer)
             return;
 
         clearTimer -= Time.deltaTime;
@@ -241,6 +542,240 @@ public sealed class TowerRunManager : MonoBehaviour
         clearTimer = Mathf.Max(0.05f, clearCheckInterval);
         if (IsFloorCleared())
             StartCoroutine(SpawnPortalsAfterDelay());
+    }
+
+    /// <summary>
+    /// 订阅所有存活传送点的事件（含客户端由 NGO 同步来的）。
+    ///
+    /// 主机本地生成的传送点在 <see cref="SpawnPortal"/> 里已订阅；
+    /// 客户端不本地生成，只能从 <see cref="FloorPortal2D.Active"/> 注册表里补订。
+    /// 幂等：已订阅的跳过。
+    /// </summary>
+    private void SubscribePortals()
+    {
+        var portals = FloorPortal2D.Active;
+        for (var i = 0; i < portals.Count; i++)
+        {
+            var portal = portals[i];
+            if (portal == null || subscribedPortals.Contains(portal))
+                continue;
+
+            portal.Entered += HandlePortalEntered;
+            portal.ExecuteRequested += HandlePortalExecuteRequested;
+            subscribedPortals.Add(portal);
+        }
+    }
+
+    /// <summary>
+    /// 主机：补订所有玩家的死亡 / 退出事件，维护存活计数。
+    ///
+    /// 玩家对象由 NGO 动态生成，无法在生成时订阅，只能每帧从注册表补订（幂等）。
+    /// 客户端不参与（存活计数由主机权威维护）。
+    /// </summary>
+    private void SubscribePlayerLifecycle()
+    {
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState == null || !sessionState.IsServer)
+            return;
+
+        foreach (var player in WorldRegistry.Players)
+        {
+            if (player == null)
+                continue;
+
+            var sync = player.GetComponent<Tower.Netcode.PlayerNetworkSync>();
+            if (sync == null || subscribedPlayers.Contains(sync))
+                continue;
+
+            sync.PlayerDied += HandlePlayerDiedNetwork;
+            sync.PlayerQuit += HandlePlayerQuitNetwork;
+            subscribedPlayers.Add(sync);
+        }
+
+        // 每次补订后重算一次存活数，保证新加入 / 已移除的玩家都被计入。
+        RefreshAliveCount();
+    }
+
+    /// <summary>主机：重算存活玩家数并写入会话状态（归零即全员死亡）。</summary>
+    private void RefreshAliveCount()
+    {
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState == null || !sessionState.IsServer)
+            return;
+
+        var alive = 0;
+        var spawned = 0;
+        foreach (var player in WorldRegistry.Players)
+        {
+            if (player == null)
+                continue;
+
+            var sync = player.GetComponent<Tower.Netcode.PlayerNetworkSync>();
+            if (sync == null || !sync.IsSpawned)
+                continue;
+
+            spawned++;
+
+            if (sync.IsAlive)
+                alive++;
+        }
+
+        // 玩家对象尚未 Spawn 完成（进场景瞬间）：不写入，避免误判全员死亡。
+        // 由 SetAlivePlayerCount 的「-1 未初始化」语义兜底，这里再挡一层更直观。
+        if (spawned == 0)
+            return;
+
+        sessionState.SetAlivePlayerCount(alive);
+    }
+
+    private void HandlePlayerDiedNetwork(ulong clientId)
+    {
+        RefreshAliveCount();
+    }
+
+    private void HandlePlayerQuitNetwork(ulong clientId)
+    {
+        RefreshAliveCount();
+    }
+
+    private void SubscribeDisconnectCallback()
+    {
+        var manager = Unity.Netcode.NetworkManager.Singleton;
+        if (manager == null || subscribedDisconnect)
+            return;
+
+        manager.OnClientDisconnectCallback += HandleClientDisconnected;
+        subscribedDisconnect = true;
+    }
+
+    private void UnsubscribeDisconnectCallback()
+    {
+        var manager = Unity.Netcode.NetworkManager.Singleton;
+        if (manager != null && subscribedDisconnect)
+            manager.OnClientDisconnectCallback -= HandleClientDisconnected;
+
+        subscribedDisconnect = false;
+    }
+
+    private void HandleClientDisconnected(ulong clientId)
+    {
+        var manager = Unity.Netcode.NetworkManager.Singleton;
+        if (manager == null || !manager.IsServer)
+            return;
+
+        StartCoroutine(RefreshAliveCountAfterDisconnect());
+    }
+
+    private IEnumerator RefreshAliveCountAfterDisconnect()
+    {
+        yield return null;
+        RefreshAliveCount();
+    }
+
+    /// <summary>
+    /// 主机：全员撤离聚合判定。
+    ///
+    /// 规则：所有存活玩家都在同一个撤退传送阵内才触发撤离；死亡观战玩家不阻塞。
+    /// 满足条件后启动倒计时（给反悔窗口），倒计时结束仍在阵内则执行撤退。
+    /// 单机不参与（单机走传送点的一次性触发路径）。
+    /// </summary>
+    private void UpdateTeamExtraction()
+    {
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState == null || !sessionState.IsServer || state.IsFinished)
+            return;
+
+        var portal = FindPortal(PortalKind.Retreat);
+        if (portal == null)
+        {
+            extractionCountdown = -1f;
+            return;
+        }
+
+        if (IsTeamFullyInside(portal))
+        {
+            if (extractionCountdown < 0f)
+            {
+                extractionCountdown = extractionCountdownSeconds;
+                Debug.Log($"[TowerRunManager] 全员进入撤退阵，开始 {extractionCountdownSeconds} 秒撤离倒计时。");
+            }
+
+            extractionCountdown -= Time.deltaTime;
+            if (extractionCountdown <= 0f)
+            {
+                extractionCountdown = -1f;
+                Debug.Log("[TowerRunManager] 撤离倒计时结束，执行撤退。");
+                Retreat();
+            }
+
+            return;
+        }
+
+        // 有人离开阵内：取消倒计时，回到等待状态。
+        if (extractionCountdown >= 0f)
+        {
+            extractionCountdown = -1f;
+            Debug.Log("[TowerRunManager] 有玩家离开撤退阵，撤离倒计时取消。");
+        }
+    }
+
+    private void UpdateTeamNextFloor()
+    {
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState == null || !sessionState.IsServer || state.IsFinished
+            || !floorBuilt || lastTeamAdvanceFrame == Time.frameCount)
+            return;
+
+        var portal = FindPortal(PortalKind.Next);
+        if (portal == null || !IsTeamFullyInside(portal))
+            return;
+
+        lastTeamAdvanceFrame = Time.frameCount;
+        ExecutePortal(PortalKind.Next);
+    }
+
+    /// <summary>取当前场景内指定种类的传送阵。没有则返回 null。</summary>
+    private FloorPortal2D FindPortal(PortalKind kind)
+    {
+        for (var i = 0; i < spawnedPortals.Count; i++)
+        {
+            var portal = spawnedPortals[i];
+            if (portal != null && portal.Kind == kind)
+                return portal;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// 判定所有存活玩家是否都在该传送阵内。
+    /// 死亡观战玩家不参与判定（不阻塞撤离）。
+    /// </summary>
+    private static bool IsTeamFullyInside(FloorPortal2D portal)
+    {
+        var hasAlive = false;
+
+        foreach (var player in WorldRegistry.Players)
+        {
+            if (player == null)
+                continue;
+
+            var sync = player.GetComponent<Tower.Netcode.PlayerNetworkSync>();
+            if (sync == null || !sync.IsSpawned)
+                continue;
+
+            // 死亡玩家不阻塞撤离。
+            if (!sync.IsAlive)
+                continue;
+
+            hasAlive = true;
+
+            if (!portal.IsPlayerInside(sync.OwnerClientId))
+                return false;
+        }
+
+        // 全员死亡时不触发撤离（由全员死亡判定接管）。
+        return hasAlive;
     }
 
     /// <summary>生成指定层：清掉上一层残留 → 实例化房间 → 放玩家 → 生成敌人 → 刷新 HUD。</summary>
@@ -262,7 +797,23 @@ public sealed class TowerRunManager : MonoBehaviour
         // 这里算一次存进 floorCenter，本层所有摆放（含延迟生成的传送点）统一读它。
         floorCenter = hasRoomBounds ? roomBounds.center : Vector2.zero;
         WarnIfRootOffCenter();
-        MovePlayerTo(floorCenter);
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState != null && sessionState.IsServer)
+        {
+            foreach (var networkPlayer in WorldRegistry.Players)
+            {
+                if (networkPlayer == null)
+                    continue;
+
+                var sync = networkPlayer.GetComponent<Tower.Netcode.PlayerNetworkSync>();
+                if (sync != null && sync.IsSpawned)
+                    sync.TeleportTo(floorCenter);
+            }
+        }
+        else if (sessionState == null)
+        {
+            MovePlayerTo(floorCenter);
+        }
 
         if (cameraFollow != null)
         {
@@ -432,16 +983,16 @@ public sealed class TowerRunManager : MonoBehaviour
         return true;
     }
 
-    /// <summary>玩家踩到传送点。先弹确认窗，确认后才真正换层 / 撤退。</summary>
+    /// <summary>单机玩家踩到传送点后弹确认窗；联机由主机轮询全队站位。</summary>
     public void HandlePortalEntered(PortalKind kind)
     {
-        if (state.IsFinished)
+        if (state.IsFinished || Tower.Netcode.BattleSessionState.Instance != null)
             return;
 
         // 没有接线确认面板时退回旧行为（直接执行），避免面板缺失导致传送点完全失效。
         if (portalConfirmPanel == null)
         {
-            ExecutePortal(kind);
+            HandlePortalExecuteRequested(kind);
             return;
         }
 
@@ -454,6 +1005,18 @@ public sealed class TowerRunManager : MonoBehaviour
         // 这里只保证玩家不会在「确认 / 取消」之间继续走动、把传送点踩乱。
         LocalPauseScope.Freeze();
         portalConfirmPanel.Show(kind);
+    }
+
+    /// <summary>单机确认后执行传送；联机请求不参与主机的全队判定。</summary>
+    private void HandlePortalExecuteRequested(PortalKind kind)
+    {
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+
+        // 联机传送由主机按全队站位判定，不接受单人确认或旧客户端请求。
+        if (sessionState != null)
+            return;
+
+        ExecutePortal(kind);
     }
 
     /// <summary>确认面板点了「确认」：执行挂起的传送。</summary>
@@ -469,7 +1032,7 @@ public sealed class TowerRunManager : MonoBehaviour
 
         var kind = pendingPortalKind.Value;
         pendingPortalKind = null;
-        ExecutePortal(kind);
+        HandlePortalExecuteRequested(kind);
     }
 
     /// <summary>确认面板点了「取消」：关掉弹窗，传送点重新可用。</summary>
@@ -484,10 +1047,12 @@ public sealed class TowerRunManager : MonoBehaviour
 
         // 传送点触发时已把自己标记为 consumed 并关掉碰撞体，取消后必须复位，
         // 否则玩家离开再回来也踩不动了。
-        foreach (var portal in spawnedPortals)
+        // 客户端 spawnedPortals 为空（传送点由 NGO 同步），改从静态注册表复位。
+        var portals = FloorPortal2D.Active;
+        for (var i = 0; i < portals.Count; i++)
         {
-            if (portal != null)
-                portal.ResetConsumed();
+            if (portals[i] != null)
+                portals[i].ResetConsumed();
         }
     }
 
@@ -508,6 +1073,13 @@ public sealed class TowerRunManager : MonoBehaviour
         }
 
         state.AdvanceFloor();
+
+        // 联机主机：把新层数广播出去，客户端据此同步换层。
+        // 客户端本地不执行换层（ExecutePortal 只在主机被调用，见 HandlePortalEntered 的联机分支）。
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState != null && sessionState.IsServer)
+            sessionState.SetCurrentFloor(state.CurrentFloor);
+
         BuildFloor(state.CurrentFloor);
     }
 
@@ -520,6 +1092,9 @@ public sealed class TowerRunManager : MonoBehaviour
         state.Finish();
         ClearFloor();
 
+        // 联机：主机撤退即本局结束，广播给所有成员一起退出。
+        BroadcastRunFinished(Tower.Netcode.BattleFinishReason.Extracted);
+
         if (resultPanel != null)
             resultPanel.Show(BuildResultEntries(), TotalLootValue(), state.CurrentFloor);
     }
@@ -528,6 +1103,9 @@ public sealed class TowerRunManager : MonoBehaviour
     public void AbortRun()
     {
         state.Finish();
+
+        // 联机：主机死亡即本局结束，广播给所有成员一起退出。
+        BroadcastRunFinished();
 
         // 死亡流程会自行决定暂停语义（单机 timeScale / 联机本地冻结），
         // 这里只解除「传送确认弹窗」可能留下的本地冻结，避免两者叠加。
@@ -573,18 +1151,65 @@ public sealed class TowerRunManager : MonoBehaviour
     {
         // 正常撤离：把局内携带与装备并入局外仓库并落盘，这才算「带出来了」。
         // 死亡路径不走这里，由 PlayerDeathFlow2D 丢弃局内携带，因此「只有正常撤离才带走」由分流保证。
+        var session = Tower.Network.NetworkSession.Instance;
+        var payload = session != null && session.CurrentRoom != null
+            ? BuildExtractionPayload() : null;
         var overflow = GameSession.ExtractRaid();
         if (overflow > 0)
             Debug.LogWarning($"[TowerRunManager] 仓库已满，有 {overflow} 件战利品未能带出。");
 
+        // 本地先结算；上报只是尽力而为，服务端未提供路由时不会落库。
+        if (payload != null)
+            StartCoroutine(SubmitExtractionRoutine(session, payload));
+
         // 死亡流程会把 timeScale 置 0 暂停游戏；这里兜底恢复，避免任何路径下把暂停状态带进主菜单。
         LocalPauseScope.Unfreeze();
         Time.timeScale = 1f;
-        SceneManager.LoadScene(mainMenuSceneName);
+        StartCoroutine(ExitToMainMenu());
+    }
+
+    /// <summary>尽力提交撤离前快照；失败不阻塞本地结算。</summary>
+    private IEnumerator SubmitExtractionRoutine(Tower.Network.NetworkSession session,
+        Tower.Network.ExtractionRequestDto body)
+    {
+        yield return session.SubmitExtraction(body, null, error =>
+            Debug.LogWarning($"[TowerRunManager] 撤离上报失败：{error}"));
+    }
+
+    /// <summary>把本局战利品清单转成上报 DTO。</summary>
+    private Tower.Network.ExtractionRequestDto BuildExtractionPayload()
+    {
+        var loot = GameSession.LocalPlayer.Raid.Loot;
+        var items = new System.Collections.Generic.List<Tower.Network.ExtractionItemDto>(loot.Count);
+
+        foreach (var instance in loot)
+        {
+            if (instance == null || instance.Definition == null)
+                continue;
+
+            items.Add(new Tower.Network.ExtractionItemDto
+            {
+                definition_id = instance.Definition.Id,
+                durability = instance.CurrentDurability,
+            });
+        }
+
+        return new Tower.Network.ExtractionRequestDto
+        {
+            floor = state.CurrentFloor,
+            items = items.ToArray(),
+        };
     }
 
     private void HandlePlayerDied()
     {
+        // 联机：死亡不结束本局，转观战（由 PlayerDeathFlow2D 处理）。
+        // 若这里 AbortRun，房主一死就会广播本局结束，全队被踢回主菜单 ——
+        // 表现为「观战没生效、房主死亡直接退出」。
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState != null)
+            return;
+
         AbortRun();
     }
 
@@ -594,6 +1219,17 @@ public sealed class TowerRunManager : MonoBehaviour
     /// </summary>
     private void HandleQuitRequested()
     {
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+
+        // 联机客户端：先通知主机移除本端角色，再走本地退出。
+        // 不通知的话，主机侧会残留一个不动的幽灵角色，且仍把本端算进撤离判定。
+        if (sessionState != null && !sessionState.IsServer)
+        {
+            var sync = GetComponentInChildren<Tower.Netcode.PlayerNetworkSync>();
+            if (sync != null)
+                sync.RequestQuitServerRpc();
+        }
+
         // 先标记本局结束，避免退出过程中残留的 Update / 传送点逻辑继续跑。
         AbortRun();
 
@@ -601,6 +1237,35 @@ public sealed class TowerRunManager : MonoBehaviour
 
         // 设置面板打开时可能冻结过本地玩家；这里兜底恢复，避免把暂停状态带进主菜单。
         LocalPauseScope.Unfreeze();
+        Time.timeScale = 1f;
+        StartCoroutine(ExitToMainMenu());
+    }
+
+    /// <summary>
+    /// 退出房间后再切回主菜单。
+    ///
+    /// 必须先退出房间：NetworkSession 是 DontDestroyOnLoad，只切场景不会断开信令，
+    /// 服务端会一直认为玩家还在房间内 —— 下次建房/进房报「你已在其他房间中」，
+    /// 且 UI 会显示「仍在房间中」的幽灵房间。
+    /// </summary>
+    private IEnumerator ExitToMainMenu()
+    {
+        if (exitingBattle)
+            yield break;
+
+        exitingBattle = true;
+
+        var session = Tower.Network.NetworkSession.Instance;
+        if (session != null && session.CurrentRoom != null)
+            yield return session.LeaveOrCloseRoom(null);
+
+        var networkManager = Unity.Netcode.NetworkManager.Singleton;
+        if (networkManager != null && networkManager.IsListening)
+            networkManager.Shutdown();
+
+        LocalPauseScope.Unfreeze();
+        LocalPauseScope.SetSpectating(false);
+        LocalPauseScope.UnfreezeWorld();
         Time.timeScale = 1f;
         SceneManager.LoadScene(mainMenuSceneName);
     }
@@ -638,11 +1303,27 @@ public sealed class TowerRunManager : MonoBehaviour
 
         var portal = Instantiate(prefab, position, Quaternion.identity);
         portal.Entered += HandlePortalEntered;
+        portal.ExecuteRequested += HandlePortalExecuteRequested;
+        subscribedPortals.Add(portal);
         spawnedPortals.Add(portal);
+
+        // 联机主机：把传送点注册进 NGO，由 NGO 自动同步到所有客户端。
+        // 客户端本地不生成传送点（Update 已被 IsServer 守卫拦下），只接收同步。
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        var netObj = portal.GetComponent<Unity.Netcode.NetworkObject>();
+        if (netObj != null && sessionState != null && sessionState.IsServer)
+            netObj.Spawn(true);
     }
 
     private void SpawnEnemies(FloorPlan plan, Vector2 center)
     {
+        // 联机客户端：敌人由主机权威生成并通过 NGO 自动同步过来，
+        // 客户端本地不生成（否则各端各有一份怪，且与主机广播的对象重复）。
+        // 单机时 BattleSessionState 为 null，走本地生成分支。
+        var sessionState = Tower.Netcode.BattleSessionState.Instance;
+        if (sessionState != null && !sessionState.IsServer)
+            return;
+
         for (var i = 0; i < plan.Enemies.Length; i++)
         {
             var prefab = plan.Enemies[i];
@@ -684,6 +1365,13 @@ public sealed class TowerRunManager : MonoBehaviour
                 dropper.Configure(plan.LootPool, plan.Floor, random);
 
             enemy.SetActive(true);
+
+            // 联机主机：把敌人注册进 NGO，由 NGO 自动同步到所有客户端。
+            // 单机时 NetworkManager 未启动，netObj 为 null 或 IsServer 为 false，
+            // 但也没有会话，敌人留在本地即可。
+            var netObj = enemy.GetComponent<Unity.Netcode.NetworkObject>();
+            if (netObj != null && sessionState != null && sessionState.IsServer)
+                netObj.Spawn(true);
 
             spawnedEnemies.Add(enemy);
         }
@@ -790,7 +1478,7 @@ public sealed class TowerRunManager : MonoBehaviour
         foreach (var dropped in WorldRegistry.DroppedItems)
         {
             if (dropped != null)
-                Destroy(dropped.gameObject);
+                DestroyNetworkAware(dropped.gameObject);
         }
     }
 
@@ -804,8 +1492,39 @@ public sealed class TowerRunManager : MonoBehaviour
         foreach (var damageable in WorldRegistry.Damageables)
         {
             if (damageable is EnemyBrain2D brain && brain.IsDead)
-                Destroy(brain.gameObject);
+                DestroyNetworkAware(brain.gameObject);
         }
+    }
+
+    /// <summary>
+    /// 销毁对象，但对 NGO 已 Spawn 的对象做区分处理。
+    ///
+    /// 客户端不能直接 <c>Destroy</c> 已 Spawn 的 NetworkObject —— NGO 会报
+    /// 「Destroy a spawned NetworkObject on a non-host client is not valid」，
+    /// 并导致网络状态错乱（实测会引发断连）。
+    /// 客户端应只清本地引用，实际销毁由主机 Despawn 后经 NGO 同步完成。
+    /// </summary>
+    private static void DestroyNetworkAware(GameObject target)
+    {
+        if (target == null)
+            return;
+
+        var netObj = target.GetComponent<Unity.Netcode.NetworkObject>();
+        if (netObj != null && netObj.IsSpawned)
+        {
+            // 主机：走 Despawn，NGO 同步移除到所有端。
+            var nm = Unity.Netcode.NetworkManager.Singleton;
+            if (nm != null && nm.IsServer)
+            {
+                netObj.Despawn(true);
+                return;
+            }
+
+            // 客户端：不 Destroy（非法），等主机 Despawn 后 NGO 自动移除。
+            return;
+        }
+
+        Destroy(target);
     }
 
     private void ClearFloor()
@@ -815,16 +1534,19 @@ public sealed class TowerRunManager : MonoBehaviour
             if (portal != null)
             {
                 portal.Entered -= HandlePortalEntered;
-                Destroy(portal.gameObject);
+                portal.ExecuteRequested -= HandlePortalExecuteRequested;
+                subscribedPortals.Remove(portal);
+                DestroyNetworkAware(portal.gameObject);
             }
         }
 
         spawnedPortals.Clear();
+        subscribedPortals.Clear();
 
         foreach (var enemy in spawnedEnemies)
         {
             if (enemy != null)
-                Destroy(enemy);
+                DestroyNetworkAware(enemy);
         }
 
         spawnedEnemies.Clear();
@@ -834,7 +1556,7 @@ public sealed class TowerRunManager : MonoBehaviour
         foreach (var damageable in damageables)
         {
             if (damageable is SwarmChaser2D swarm)
-                Destroy(swarm.gameObject);
+                DestroyNetworkAware(swarm.gameObject);
         }
 
         ClearDroppedItems();

@@ -302,7 +302,7 @@ public static class RoomPanelBuilder
 
         memberEntry.gameObject.SetActive(false);
 
-        // 出发按钮：房主且人数 > 1 时可点，成员显示「等待房主出发」。
+        // 出发按钮：房主且人数 > 1 时可点。
         // 放在成员列表下方，作为结果区最醒目的操作。
         var departButtonY = memberListTop - memberListHeight - 16f - SubmitSize.y * 0.5f;
 
@@ -312,6 +312,15 @@ public static class RoomPanelBuilder
         var departLabel = CreateText("Label", departButton.transform, SubmitSize, Vector2.zero, font, 40f);
         departLabel.text = "出发";
         departLabel.color = Color.white;
+
+        // 准备按钮：与出发按钮同位置，成员端显示、房主端隐藏。
+        // 复用同一块空间，避免为两种角色各留一行导致布局溢出。
+        var readyButton = CreateImageButton("ReadyButton", resultGroup,
+            new Vector2(0f, departButtonY), SubmitSize, LoadSprite(SpriteDir + "主按钮-普通.png"));
+
+        var readyLabel = CreateText("Label", readyButton.transform, SubmitSize, Vector2.zero, font, 40f);
+        readyLabel.text = "准备";
+        readyLabel.color = Color.white;
 
         var resultButtonY = departButtonY - SubmitSize.y * 0.5f - 20f - ResultButtonHeight * 0.5f;
 
@@ -348,7 +357,7 @@ public static class RoomPanelBuilder
             createPage.gameObject, roomNameInput, optionButtons, optionLabels, createSubmit, createSubmitLabel,
             joinPage.gameObject, roomCodeInput, joinSubmit, joinSubmitLabel,
             resultGroup.gameObject, resultCode, resultHint, copyButton, leaveButton,
-            departButton, departLabel,
+            departButton, departLabel, readyButton, readyLabel,
             memberListRoot, memberEntry.gameObject,
             error, closeButton);
 
@@ -423,7 +432,7 @@ public static class RoomPanelBuilder
         Button createSubmit, TMP_Text createSubmitLabel,
         GameObject joinPage, TMP_InputField roomCodeInput, Button joinSubmit, TMP_Text joinSubmitLabel,
         GameObject resultGroup, TMP_Text resultCode, TMP_Text resultHint, Button copyButton, Button leaveButton,
-        Button departButton, TMP_Text departLabel,
+        Button departButton, TMP_Text departLabel, Button readyButton, TMP_Text readyLabel,
         RectTransform memberListRoot, GameObject memberEntryTemplate,
         TMP_Text error, Button closeButton)
     {
@@ -450,6 +459,8 @@ public static class RoomPanelBuilder
         serialized.FindProperty("leaveButton").objectReferenceValue = leaveButton;
         serialized.FindProperty("departButton").objectReferenceValue = departButton;
         serialized.FindProperty("departLabel").objectReferenceValue = departLabel;
+        serialized.FindProperty("readyButton").objectReferenceValue = readyButton;
+        serialized.FindProperty("readyLabel").objectReferenceValue = readyLabel;
         serialized.FindProperty("memberListRoot").objectReferenceValue = memberListRoot;
         serialized.FindProperty("memberEntryTemplate").objectReferenceValue = memberEntryTemplate;
         serialized.FindProperty("errorText").objectReferenceValue = error;

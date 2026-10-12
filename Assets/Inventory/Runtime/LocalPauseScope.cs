@@ -16,18 +16,55 @@ using UnityEngine;
 /// </summary>
 public static class LocalPauseScope
 {
-    /// <summary>本机玩家是否被本地冻结。联机下由弹窗置位，单机下恒为 false。</summary>
-    public static bool IsFrozen { get; private set; }
+    /// <summary>
+    /// 本机玩家是否被本地冻结（输入 + 本机表现）。联机下由弹窗 / 死亡置位，单机下恒为 false。
+    ///
+    /// 只应被「本机玩家自己的组件」读取（移动输入、开火、本机角色动画、受击红边、背包面板）。
+    /// 世界 / 主机权威逻辑（敌人 AI、相机、弹幕、传送点等）**不得**读它 ——
+    /// 否则联机时房主一死，主机上的敌人 AI 与相机全停，客户端收不到同步，表现为「全队画面冻结」。
+    /// 那类组件应改读 <see cref="IsWorldFrozen"/>。
+    /// </summary>
+    private static bool locallyFrozen;
+    private static bool spectateFrozen;
+
+    public static bool IsFrozen => locallyFrozen || spectateFrozen;
+
+    /// <summary>
+    /// 世界是否被冻结。仅单机暂停（<c>Time.timeScale = 0</c>）时为 true；
+    /// 联机下恒为 false —— 联机世界永不停，只冻结本机玩家。
+    ///
+    /// 供敌人 AI / 相机 / 弹幕 / 传送点等「世界逻辑」读取：
+    /// 单机暂停时它们应停住（与改造前一致），联机时它们必须照常推进。
+    /// </summary>
+    public static bool IsWorldFrozen { get; private set; }
 
     /// <summary>冻结本地玩家。幂等，重复调用无副作用。</summary>
     public static void Freeze()
     {
-        IsFrozen = true;
+        locallyFrozen = true;
     }
 
-    /// <summary>解除本地冻结。幂等。</summary>
+    /// <summary>解除普通本地冻结，不影响死亡观战持有的冻结。</summary>
     public static void Unfreeze()
     {
-        IsFrozen = false;
+        locallyFrozen = false;
+    }
+
+    /// <summary>设置死亡观战冻结，与弹窗等普通冻结相互独立。</summary>
+    public static void SetSpectating(bool value)
+    {
+        spectateFrozen = value;
+    }
+
+    /// <summary>冻结世界（仅单机暂停使用）。</summary>
+    public static void FreezeWorld()
+    {
+        IsWorldFrozen = true;
+    }
+
+    /// <summary>解除世界冻结。</summary>
+    public static void UnfreezeWorld()
+    {
+        IsWorldFrozen = false;
     }
 }

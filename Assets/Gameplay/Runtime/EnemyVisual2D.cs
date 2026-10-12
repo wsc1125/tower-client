@@ -29,6 +29,34 @@ public sealed class EnemyVisual2D : MonoBehaviour
     /// </summary>
     public bool HasAttackFrames => attackFrames != null && attackFrames.Length > 0;
 
+    /// <summary>
+    /// 取当前水平朝向（true = 朝左）。供联机同步读取主机侧朝向。
+    /// </summary>
+    public bool TryGetFacingLeft(out bool facingLeft)
+    {
+        if (spriteRenderer == null)
+        {
+            facingLeft = false;
+            return false;
+        }
+
+        facingLeft = spriteRenderer.flipX;
+        return true;
+    }
+
+    /// <summary>
+    /// 直接设置水平朝向。供联机客户端按主机广播的朝向翻转贴图 ——
+    /// 客户端 velocity 恒为 0，靠 <see cref="Step"/> 内的速度判定无法翻转。
+    /// </summary>
+    public void SetFacingLeft(bool facingLeft)
+    {
+        if (spriteRenderer == null)
+            spriteRenderer = GetComponent<SpriteRenderer>();
+
+        if (spriteRenderer != null)
+            spriteRenderer.flipX = facingLeft;
+    }
+
     private void Awake()
     {
         if (spriteRenderer == null)
@@ -37,9 +65,9 @@ public sealed class EnemyVisual2D : MonoBehaviour
 
     public bool Step(EnemyState state, Vector2 velocity, float deltaTime)
     {
-        // 本地冻结（联机弹窗）期间动画停住：世界照常推进，但敌人看起来是静止的。
-        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
-        if (LocalPauseScope.IsFrozen)
+        // 世界冻结（仅单机暂停）期间动画停住：联机下世界永不停，敌人动画照常推进。
+        // 单机下 IsWorldFrozen 与改造前的 timeScale=0 语义一致。
+        if (LocalPauseScope.IsWorldFrozen)
             return false;
 
         if (state != previousState)

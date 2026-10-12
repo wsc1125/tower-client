@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 6143909098476092856}
   - component: {fileID: 1643277593998683169}
   - component: {fileID: 2326936540561346872}
+  - component: {fileID: 8105378204255922622}
   m_Layer: 0
   m_Name: FloorPortal_Retreat
   m_TagString: Untagged
@@ -89,6 +90,26 @@ MonoBehaviour:
   pulseAmplitude: 0.22
   pulseSpeed: 1.6
   pulseScaleAmplitude: 0.05
+--- !u!114 &8105378204255922622
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3402870572694708682}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GlobalObjectIdHash: 951099334
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
 --- !u!1 &4158989113647389561
 GameObject:
   m_ObjectHideFlags: 0

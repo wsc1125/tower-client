@@ -62,8 +62,27 @@ public sealed class DeathPanelController : MonoBehaviour
         panelRoot.SetActive(true);
     }
 
+    /// <summary>显示全灭提示并隐藏确认按钮，退出由上层按 unscaled time 执行。</summary>
+    public void ShowAutoExit(string autoTitle, string autoHint)
+    {
+        if (panelRoot == null)
+            return;
+
+        if (titleText != null)
+            titleText.text = autoTitle;
+        if (hintText != null)
+            hintText.text = autoHint;
+        if (confirmButton != null)
+            confirmButton.gameObject.SetActive(false);
+
+        panelRoot.SetActive(true);
+    }
+
     public void Hide()
     {
+        if (confirmButton != null)
+            confirmButton.gameObject.SetActive(true);
+
         if (panelRoot != null)
             panelRoot.SetActive(false);
     }

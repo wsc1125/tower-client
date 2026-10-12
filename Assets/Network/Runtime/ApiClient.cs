@@ -227,39 +227,6 @@ namespace Tower.Network
                 _ => onSuccess?.Invoke(), onError);
         }
 
-        // ---- 游戏会话 ----
-
-        /// <summary>房主创建本局游戏会话。</summary>
-        public IEnumerator CreateSession(string roomCode, Action<GameSessionDto> onSuccess, Action<ApiError> onError)
-        {
-            return Send<GameSessionDto>(UnityWebRequest.kHttpVerbPOST, "/rooms/" + roomCode + "/session", null, true,
-                onSuccess, onError);
-        }
-
-        /// <summary>查询房间当前会话（成员补齐错过的推送）。</summary>
-        public IEnumerator GetSession(string roomCode, Action<GameSessionDto> onSuccess, Action<ApiError> onError)
-        {
-            return Send<GameSessionDto>(UnityWebRequest.kHttpVerbGET, "/rooms/" + roomCode + "/session", null, true,
-                onSuccess, onError);
-        }
-
-        /// <summary>房主写入连接地址，标记会话可连接。</summary>
-        public IEnumerator MarkSessionReady(string roomCode, string hostAddress, int hostPort,
-            Action<GameSessionDto> onSuccess, Action<ApiError> onError)
-        {
-            var body = new SessionReadyRequestDto { host_address = hostAddress, host_port = hostPort };
-
-            return Send<GameSessionDto>(UnityWebRequest.kHttpVerbPOST, "/rooms/" + roomCode + "/session/ready", body, true,
-                onSuccess, onError);
-        }
-
-        /// <summary>房主结束本局会话。</summary>
-        public IEnumerator CloseSession(string roomCode, Action onSuccess, Action<ApiError> onError)
-        {
-            return SendRaw(UnityWebRequest.kHttpVerbDELETE, "/rooms/" + roomCode + "/session", null, true,
-                _ => onSuccess?.Invoke(), onError);
-        }
-
         // ---- 中继 ----
 
         /// <summary>获取 STUN/TURN 地址与临时凭证。</summary>
@@ -267,6 +234,19 @@ namespace Tower.Network
         {
             return Send<RelayCredentialsDto>(UnityWebRequest.kHttpVerbGET, "/relay/credentials", null, true,
                 onSuccess, onError);
+        }
+
+        // ---- 撤离结算 ----
+
+        /// <summary>
+        /// 提交本局撤离战利品清单。服务端直接落库（本期不做校验）。
+        /// 响应体为空，因此用 SendRaw 而非 Send。
+        /// </summary>
+        public IEnumerator SubmitExtraction(ExtractionRequestDto body,
+            Action onSuccess, Action<ApiError> onError)
+        {
+            return SendRaw(UnityWebRequest.kHttpVerbPOST, "/raid/extract", body, true,
+                _ => onSuccess?.Invoke(), onError);
         }
 
         // ---- 头像 ----

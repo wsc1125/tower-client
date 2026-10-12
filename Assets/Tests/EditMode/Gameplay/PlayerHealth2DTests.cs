@@ -1,8 +1,129 @@
+using System.Reflection;
 using NUnit.Framework;
 using UnityEngine;
+using UnityEngine.UI;
+using Tower.Netcode;
 
 public class PlayerHealth2DTests
 {
+    [Test]
+    public void HudReady_BindsLocalHealthAfterNetworkSpawn()
+    {
+        var player = new GameObject("Player");
+        var panelObject = new GameObject("StatusPanel");
+        var fillObject = new GameObject("HpFill");
+        fillObject.transform.SetParent(panelObject.transform);
+        var fill = fillObject.AddComponent<Image>();
+        var panel = panelObject.AddComponent<StatusPanelController>();
+        typeof(StatusPanelController).GetField("hpFillImage", BindingFlags.Instance | BindingFlags.NonPublic)
+            .SetValue(panel, fill);
+
+        try
+        {
+            var health = player.AddComponent<PlayerHealth2D>();
+            var sync = player.AddComponent<PlayerNetworkSync>();
+            health.ApplyAuthoritativeHealth(40f, 100f, false);
+            Assert.That(fill.fillAmount, Is.Not.EqualTo(0.4f).Within(0.001f));
+
+            typeof(PlayerNetworkSync).GetField("health", BindingFlags.Instance | BindingFlags.NonPublic)
+                .SetValue(sync, health);
+            typeof(PlayerNetworkSync).GetMethod("HandleHudReady", BindingFlags.Instance | BindingFlags.NonPublic)
+                .Invoke(sync, null);
+
+            Assert.That(fill.fillAmount, Is.EqualTo(0.4f).Within(0.001f));
+        }
+        finally
+        {
+            Object.DestroyImmediate(player);
+            Object.DestroyImmediate(panelObject);
+        }
+    }
+
+    [Test]
+    public void HealRequest_ServerChecksOwnerAliveCombatAndAmount()
+    {
+        var player = new GameObject("Player");
+        try
+        {
+            var health = player.AddComponent<PlayerHealth2D>();
+            health.ApplyAuthoritativeHealth(40f, 100f, false);
+            Assert.That(PlayerNetworkSync.ShouldProcessHealRequest(2, 1, 99, 0), Is.False);
+            Assert.That(PlayerNetworkSync.ShouldProcessHealRequest(1, 1, 5, 5), Is.False);
+            Assert.That(PlayerNetworkSync.ShouldProcessHealRequest(1, 1, 6, 5), Is.True);
+            Assert.That(PlayerNetworkSync.CanApplyHealRequest(1, 2, health, 20f), Is.False);
+            Assert.That(PlayerNetworkSync.CanApplyHealRequest(1, 1, health, float.PositiveInfinity), Is.False);
+            Assert.That(PlayerNetworkSync.CanApplyHealRequest(1, 1, health, 20f), Is.True);
+            health.TakeDamage(1f);
+            Assert.That(PlayerNetworkSync.CanApplyHealRequest(1, 1, health, 20f), Is.False);
+            health.ApplyAuthoritativeHealth(100f, 100f, false);
+            Assert.That(PlayerNetworkSync.CanApplyHealRequest(1, 1, health, 20f), Is.False);
+        }
+        finally { Object.DestroyImmediate(player); }
+    }
+
+    private sealed class BagTargetStub : MonoBehaviour, IConsumableTarget, ILocalConsumableTarget
+    {
+        public bool Local;
+        public bool IsLocalConsumableTarget => Local;
+        public bool IsDead => false;
+        public bool IsInCombatLock => false;
+        public float MissingHealth() => 50f;
+        public float Heal(float amount) => amount;
+        public int RepairArmor(int amount) => 0;
+        public int RepairArmorSlot(EquipmentSlotType slot, int amount) => 0;
+        public int MissingDurabilityAt(EquipmentSlotType slot) => 0;
+        public ItemRarity RarityAt(EquipmentSlotType slot) => ItemRarity.Common;
+    }
+
+    [Test]
+    public void BagTarget_DoesNotUseConfiguredRemotePlayer()
+    {
+        var remote = new GameObject("Remote");
+        var local = new GameObject("Local");
+        var bagObject = new GameObject("Bag");
+        try
+        {
+            var wrong = remote.AddComponent<BagTargetStub>();
+            var correct = local.AddComponent<BagTargetStub>();
+            correct.Local = true;
+            var bag = bagObject.AddComponent<BagPanelController>();
+            typeof(BagPanelController).GetField("consumableTargetBehaviour", BindingFlags.Instance | BindingFlags.NonPublic)
+                .SetValue(bag, wrong);
+            Assert.That(bag.Target, Is.SameAs(correct));
+        }
+        finally
+        {
+            Object.DestroyImmediate(bagObject);
+            Object.DestroyImmediate(local);
+            Object.DestroyImmediate(remote);
+        }
+    }
+
+    [Test]
+    public void LocalConsumableTarget_RejectsRemoteNetworkCopy()
+    {
+        var player = new GameObject("Player");
+        try
+        {
+            var health = player.AddComponent<PlayerHealth2D>();
+            Assert.That(health.IsLocalConsumableTarget, Is.True);
+            player.AddComponent<PlayerNetworkSync>();
+            Assert.That(PlayerNetworkSync.IsLocalConsumableOwner(true, false, false), Is.False);
+            Assert.That(PlayerNetworkSync.IsLocalConsumableOwner(true, true, false), Is.True);
+            Assert.That(PlayerNetworkSync.IsLocalConsumableOwner(false, false, false), Is.True);
+        }
+        finally { Object.DestroyImmediate(player); }
+    }
+
+    [Test]
+    public void LocalConsumableTarget_OnlineRequiresSpawnedOwner()
+    {
+        Assert.That(PlayerNetworkSync.IsLocalConsumableOwner(false, false, true), Is.False);
+        Assert.That(PlayerNetworkSync.IsLocalConsumableOwner(false, true, true), Is.False);
+        Assert.That(PlayerNetworkSync.IsLocalConsumableOwner(true, false, true), Is.False);
+        Assert.That(PlayerNetworkSync.IsLocalConsumableOwner(true, true, true), Is.True);
+    }
+
     [Test]
     public void TakeDamage_FiresDiedExactlyOnce()
     {
@@ -285,5 +406,61 @@ public class PlayerHealth2DTests
         armor.Rebuild(new[] { new ArmorPiece(EquipmentSlotType.BodyArmor, TestItems.ArmorInstance(EquipmentSlotType.BodyArmor, damageReduction: 0.3f, durability: 20)) });
 
         Assert.That(armor.CurrentDurability, Is.EqualTo(20));
+    }
+
+    [Test]
+    public void SetRemoteCopyVisual_MarksCharacterVisualOnPlayer()
+    {
+        var root = new GameObject("Player");
+        var visual = new GameObject("Visual", typeof(SpriteRenderer), typeof(CharacterVisual2D));
+        visual.transform.SetParent(root.transform);
+
+        try
+        {
+            PlayerNetworkSync.SetRemoteCopyVisual(visual.transform, true);
+            Assert.That(visual.GetComponent<CharacterVisual2D>().IsRemoteCopy, Is.True);
+
+            PlayerNetworkSync.SetRemoteCopyVisual(visual.transform, false);
+            Assert.That(visual.GetComponent<CharacterVisual2D>().IsRemoteCopy, Is.False);
+        }
+        finally
+        {
+            Object.DestroyImmediate(root);
+        }
+    }
+
+    [Test]
+    public void RemoteCopyVisual_KeepsHitFlashRunningWhileLocalPlayerFrozen()
+    {
+        // 复现：主机玩家死亡进入观战（本机冻结）后，远端玩家的受击闪烁被卡住，
+        // 主机端 IsInvulnerable 恒真 → 远端玩家永久免疫 → 血条不再变化、不触发死亡。
+        LocalPauseScope.SetSpectating(true);
+        var player = new GameObject("RemoteCopyPlayer");
+        var visualGo = new GameObject("Visual");
+        visualGo.transform.SetParent(player.transform);
+        visualGo.AddComponent<SpriteRenderer>();
+        var visual = visualGo.AddComponent<CharacterVisual2D>();
+        var health = player.AddComponent<PlayerHealth2D>();
+
+        try
+        {
+            PlayerNetworkSync.SetRemoteCopyVisual(visualGo.transform, true);
+
+            health.TakeDamage(10f);
+            visual.AdvanceHitFlash(1f);
+
+            // 远端副本的闪烁计时必须照常推进：它是主机权威无敌帧的来源。
+            Assert.That(visual.IsHitFlashing, Is.False);
+            Assert.That(health.CurrentHealth, Is.EqualTo(90f).Within(0.001f));
+
+            // 闪烁结束后第二击必须正常扣血。
+            health.TakeDamage(10f);
+            Assert.That(health.CurrentHealth, Is.EqualTo(80f).Within(0.001f));
+        }
+        finally
+        {
+            LocalPauseScope.SetSpectating(false);
+            Object.DestroyImmediate(player);
+        }
     }
 }

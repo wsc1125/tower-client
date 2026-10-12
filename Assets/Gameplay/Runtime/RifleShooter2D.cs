@@ -38,6 +38,9 @@ public sealed class RifleShooter2D : MonoBehaviour
 
     public bool IsRecoiling => recoilRemaining > 0f;
 
+    /// <summary>当前瞄准角（度）。供联机同步读取，远端据此复现枪口朝向。</summary>
+    public float CurrentAimAngle => Mathf.Atan2(lastAimDirection.y, lastAimDirection.x) * Mathf.Rad2Deg;
+
     /// <summary>
     /// 当前使用的挂点：由 <see cref="PlayerWeaponSelector.ActiveSlot"/> 决定。
     /// 主手与副手完全等价，武器装在哪只手上就用哪只手开火。
@@ -130,6 +133,32 @@ public sealed class RifleShooter2D : MonoBehaviour
 
     private void Awake()
     {
+        EnsureReady();
+    }
+
+    /// <summary>
+    /// 运行时接线。联机动态生成的玩家来自 prefab，而 prefab 无法序列化场景内引用
+    /// （HUD 按钮、武器挂点都在场景里），因此必须在生成后由 <c>PlayerNetworkSync</c> 补接。
+    /// 不接线会导致「房主玩家武器不显示、攻击键无反应」。
+    /// </summary>
+    public void BindRuntime(
+        WeaponMountSlot mainHand,
+        WeaponMountSlot offHand,
+        PlayerWeaponSelector weaponSelector,
+        HoldButton fireButton,
+        PlayerMovement2D playerMovement)
+    {
+        if (mainHand != null)
+            mainHandSlot = mainHand;
+        if (offHand != null)
+            offHandSlot = offHand;
+        if (weaponSelector != null)
+            selector = weaponSelector;
+        if (fireButton != null)
+            attackButton = fireButton;
+        if (playerMovement != null)
+            movement = playerMovement;
+
         EnsureReady();
     }
 
@@ -389,6 +418,12 @@ public sealed class RifleShooter2D : MonoBehaviour
         {
             var enemy = enemies[i];
             if (enemy == null || enemy.IsDead)
+                continue;
+
+            // 联机客户端：本地 health.IsDead 恒为 false，必须读同步的权威存活状态，
+            // 否则会继续瞄准已经死掉的敌人。
+            var sync = enemy.transform.GetComponent<Tower.Netcode.EnemyNetworkSync>();
+            if (sync != null && sync.IsSpawned && !sync.IsAlive)
                 continue;
 
             var toEnemy = (Vector2)(enemy.transform.position - origin);

@@ -65,6 +65,24 @@ public sealed class PlayerWeaponSelector : MonoBehaviour
         GameSession.RaidChanged += HandleRaidChanged;
     }
 
+    /// <summary>
+    /// 运行时接线。联机动态生成的玩家来自 prefab，而 prefab 无法序列化场景内引用
+    /// （切换按钮在场景 HUD 里），因此必须在生成后由 <c>PlayerNetworkSync</c> 补接。
+    /// 不接线会导致「切武器按钮无反应」。
+    /// </summary>
+    public void BindRuntime(AttackSwitchButton button)
+    {
+        if (button == null || button == switchButton)
+            return;
+
+        // 先退订旧按钮，避免重复订阅导致一次点击触发两次切换。
+        if (switchButton != null)
+            switchButton.Clicked -= Toggle;
+
+        switchButton = button;
+        switchButton.Clicked += Toggle;
+    }
+
     private void OnDisable()
     {
         if (switchButton != null)

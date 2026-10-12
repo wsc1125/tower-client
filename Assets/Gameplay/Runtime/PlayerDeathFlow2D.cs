@@ -33,6 +33,7 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
     [SerializeField] private bool multiplayerMode;
 
     private bool deathHandled;
+    private bool spectating;
 
     private void Awake()
     {
@@ -46,6 +47,7 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
             return;
 
         playerHealth.Died += HandleDeath;
+        playerHealth.Revived += HandleRevived;
 
         // 订阅前玩家可能已经死亡（例如本组件晚于死亡被启用）。
         if (playerHealth.IsDead)
@@ -55,13 +57,26 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
     private void OnDisable()
     {
         if (playerHealth != null)
+        {
             playerHealth.Died -= HandleDeath;
+            playerHealth.Revived -= HandleRevived;
+        }
 
         if (deathPanel != null)
             deathPanel.Confirmed -= HandleConfirmed;
 
-        // 组件被禁用时兜底解除冻结，避免把「本机玩家不能动」的状态带出本场景。
-        LocalPauseScope.Unfreeze();
+        // 只释放本流程持有的观战冻结，避免远端副本销毁时影响本地玩家。
+        ExitSpectate();
+    }
+
+    /// <summary>
+    /// 复活回调：重置「已处理死亡」标记，让复活后再次死亡能重新进入观战流程。
+    /// 否则 <see cref="deathHandled"/> 停在 true，再次死亡不会通知主机更新存活计数。
+    /// </summary>
+    private void HandleRevived()
+    {
+        deathHandled = false;
+        ExitSpectate();
     }
 
     private void HandleDeath()
@@ -69,18 +84,20 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
         if (deathHandled)
             return;
 
+        // 联机死亡由 owner 本机响应 syncedAlive，禁止主机上的远端副本处理本地 Died 事件。
+        if (IsOnlineSession())
+            return;
+
         deathHandled = true;
 
-        // 先标记本局结束，避免残留到下一局。
+        // 单机：原行为（标记本局结束 + 弹结算）。
         if (towerRun != null)
             towerRun.AbortRun();
 
-        // 暂停：单机冻结整个世界，联机只冻结本地玩家。
-        // 联机判定以运行时会话为准（prefab 被单机/联机共用，不能只靠 Inspector 开关）。
-        if (multiplayerMode || Tower.Netcode.BattleNetworkBinder.IsOnlineSession)
-            LocalPauseScope.Freeze();
-        else
-            Time.timeScale = 0f;
+        // 单机暂停整个世界：timeScale 归零 + 世界冻结标记（供敌人 AI / 相机等读取）。
+        // 联机不走这里 —— 联机死亡只冻结本机玩家，世界照常推进。
+        Time.timeScale = 0f;
+        LocalPauseScope.FreezeWorld();
 
         if (deathPanel != null)
         {
@@ -93,6 +110,38 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
         StartCoroutine(ExitAfterDelay());
     }
 
+    /// <summary>owner 本机进入联机观战，只冻结本地操作。</summary>
+    public void EnterSpectate()
+    {
+        if (!IsOnlineSession() || spectating)
+            return;
+
+        spectating = true;
+        LocalPauseScope.SetSpectating(true);
+    }
+
+    /// <summary>owner 本机退出观战并恢复操作。</summary>
+    public void ExitSpectate()
+    {
+        if (!spectating)
+            return;
+
+        spectating = false;
+        LocalPauseScope.SetSpectating(false);
+    }
+
+    private bool IsOnlineSession()
+    {
+        return multiplayerMode || Tower.Netcode.BattleNetworkBinder.IsOnlineSession || IsNetworkActive();
+    }
+
+    /// <summary>NGO 是否正在运行（Host 或 Client）。单机返回 false。</summary>
+    private static bool IsNetworkActive()
+    {
+        var nm = Unity.Netcode.NetworkManager.Singleton;
+        return nm != null && nm.IsListening;
+    }
+
     /// <summary>玩家点了「返回主菜单」。</summary>
     private void HandleConfirmed()
     {
@@ -101,7 +150,13 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
 
         AbandonRaid();
         ResumeWorld();
-        SceneManager.LoadScene(mainMenuSceneName);
+
+        // 联机：房主确认死亡后广播本局结束，所有端（含成员）统一切回主菜单。
+        // 否则房主切走后成员会卡在战斗场景、玩家对象被销毁后「角色消失」。
+        if (towerRun != null)
+            towerRun.BroadcastRunFinished();
+
+        StartCoroutine(ExitToMainMenu());
     }
 
     private IEnumerator ExitAfterDelay()
@@ -116,13 +171,35 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
 
         AbandonRaid();
         ResumeWorld();
+
+        // 与确认路径一致：联机下广播本局结束，所有端统一切回主菜单。
+        if (towerRun != null)
+            towerRun.BroadcastRunFinished();
+
+        yield return ExitToMainMenu();
+    }
+
+    /// <summary>
+    /// 退出房间后再切回主菜单。
+    ///
+    /// 必须先退出房间：NetworkSession 是 DontDestroyOnLoad，只切场景不会断开信令，
+    /// 服务端会一直认为玩家还在房间内 —— 下次建房/进房报「你已在其他房间中」，
+    /// 且 UI 会显示「仍在房间中」的幽灵房间。
+    /// </summary>
+    private IEnumerator ExitToMainMenu()
+    {
+        var session = Tower.Network.NetworkSession.Instance;
+        if (session != null && session.CurrentRoom != null)
+            yield return session.LeaveOrCloseRoom(null);
+
         SceneManager.LoadScene(mainMenuSceneName);
     }
 
-    /// <summary>解除暂停。单机恢复 timeScale，联机解除本地冻结。</summary>
+    /// <summary>解除暂停。单机恢复 timeScale 与世界冻结，联机解除本地冻结。</summary>
     private void ResumeWorld()
     {
         LocalPauseScope.Unfreeze();
+        LocalPauseScope.UnfreezeWorld();
         Time.timeScale = 1f;
     }
 

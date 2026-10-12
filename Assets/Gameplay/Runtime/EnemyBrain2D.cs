@@ -104,6 +104,15 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
     public bool IsDead => health != null && health.IsDead;
     public float CurrentHealth => health != null ? health.Current : maximumHealth;
 
+    /// <summary>
+    /// 联机客户端为 true：跳过本地 AI 逻辑，但保持注册与可被索敌。
+    ///
+    /// 为什么不用 <c>enabled = false</c>：禁用组件会触发 <see cref="OnDisable"/> 注销注册表，
+    /// 导致客户端 <c>WorldRegistry.Damageables</c> 为空，本机玩家武器找不到敌人、无法瞄准。
+    /// 单机恒为 false，行为不变。
+    /// </summary>
+    public bool NetworkPuppet { get; set; }
+
     /// <summary>巡逻点 A（世界坐标）。</summary>
     public Vector2 PatrolPointA => patrolPointA;
 
@@ -265,6 +274,7 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
 
         var provider = new NearestPlayerTargetProvider();
         provider.SetSelf(transform);
+        provider.SetLoseRange(loseRange);
         if (player != null)
             provider.SetExplicitTarget(player);
 
@@ -319,9 +329,13 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
 
     private void FixedUpdate()
     {
-        // 本地冻结（联机弹窗）期间敌人停住：世界照常推进，但本机看到的敌人暂停。
-        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
-        if (LocalPauseScope.IsFrozen)
+        // 联机客户端：AI 由主机权威驱动，本端只做表现，跳过全部行为逻辑。
+        if (NetworkPuppet)
+            return;
+
+        // 世界冻结（仅单机暂停）期间敌人停住：联机下世界永不停，敌人照常推进。
+        // 单机下 IsWorldFrozen 与改造前的 timeScale=0 语义一致。
+        if (LocalPauseScope.IsWorldFrozen)
             return;
 
         cooldownRemaining = Mathf.Max(0f, cooldownRemaining - Time.fixedDeltaTime);
@@ -410,6 +424,20 @@ public sealed class EnemyBrain2D : MonoBehaviour, IDamageable
         var laser = Instantiate(laserPrefab, muzzlePoint.position, Quaternion.identity);
         laser.Launch(direction, laserSpeed, bodyCollider);
         laser.ScaleDamage(laserDamageMultiplier);
+
+        // 联机主机：把弹丸注册进 NGO，由 NGO 自动同步到所有客户端。
+        // 参数在 EnemyLaserProjectile2D.OnNetworkSpawn 里由主机写入并同步。
+        // 客户端不生成弹丸（敌人 AI 已被禁用，不会走到这里）。
+        var netObj = laser.GetComponent<Unity.Netcode.NetworkObject>();
+        if (netObj != null && !netObj.IsSpawned && IsServerAuthority())
+            netObj.Spawn(true);
+    }
+
+    /// <summary>本端是否为权威端（主机 / 单机）。单机时 NetworkManager 未启动，返回 false。</summary>
+    private static bool IsServerAuthority()
+    {
+        var nm = Unity.Netcode.NetworkManager.Singleton;
+        return nm != null && nm.IsListening && nm.IsServer;
     }
 
     private float GetSpeed(EnemyState current)

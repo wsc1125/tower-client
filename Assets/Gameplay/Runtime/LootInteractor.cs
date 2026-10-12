@@ -20,14 +20,24 @@ public sealed class LootInteractor : MonoBehaviour
 
     private void Awake()
     {
+        BindRuntime(panel);
+    }
+
+    public void BindRuntime(LootPanelController runtimePanel)
+    {
+        if (panel != null)
+            panel.ItemSelected -= HandleItemSelected;
+
+        panel = runtimePanel;
         if (panel != null)
             panel.ItemSelected += HandleItemSelected;
+
+        previous.Clear();
     }
 
     private void OnDestroy()
     {
-        if (panel != null)
-            panel.ItemSelected -= HandleItemSelected;
+        BindRuntime(null);
     }
 
     private void Update()
@@ -108,12 +118,40 @@ public sealed class LootInteractor : MonoBehaviour
         return result;
     }
 
-    /// <summary>拾取的唯一入口。将来接联机时只改这个方法内部：发请求 + 服务器校验后再发货。</summary>
+    /// <summary>
+    /// 拾取的唯一入口。
+    ///
+    /// 单机：本地直接拾取（原行为）。
+    /// 联机：掉落物是全局共享的，必须由主机裁决归属（先到先得），
+    /// 否则同一件物品会被多个玩家同时拿走（物品复制）。
+    /// 客户端只发请求，实际入包与销毁由主机完成并广播。
+    /// </summary>
     public bool TryPickup(DroppedItem2D dropped)
     {
         if (dropped == null || dropped.Item == null)
             return false;
 
+        // 联机客户端：发请求给主机裁决，本地不直接入包。
+        if (IsOnlineClient())
+        {
+            dropped.RequestPickupServerRpc();
+            return true;
+        }
+
+        // 单机 / 主机：本地直接拾取。
+        return PickupLocally(dropped);
+    }
+
+    /// <summary>本端是否为联机客户端（非主机）。单机时 NetworkManager 未启动，返回 false。</summary>
+    private static bool IsOnlineClient()
+    {
+        var nm = Unity.Netcode.NetworkManager.Singleton;
+        return nm != null && nm.IsListening && !nm.IsServer;
+    }
+
+    /// <summary>本地拾取：入包 + 记录战利品 + 销毁掉落物。单机与主机走这里。</summary>
+    private bool PickupLocally(DroppedItem2D dropped)
+    {
         // 局内拾取进「携带」，与局内背包面板展示的是同一份数据；
         // 仓库只在主菜单里管理，战斗内不展示。
         if (!GameSession.LocalPlayer.Raid.TryAddToCarry(dropped.Item))
@@ -127,7 +165,11 @@ public sealed class LootInteractor : MonoBehaviour
         // 记入本局战利品清单，撤退结算面板据此展示。
         GameSession.LocalPlayer.Raid.RecordLoot(dropped.Item);
 
-        if (Application.isPlaying)
+        // 联机主机：走 Despawn 让 NGO 同步移除；单机直接 Destroy。
+        var netObj = dropped.GetComponent<Unity.Netcode.NetworkObject>();
+        if (netObj != null && netObj.IsSpawned)
+            netObj.Despawn(true);
+        else if (Application.isPlaying)
             Destroy(dropped.gameObject);
         else
             DestroyImmediate(dropped.gameObject);

@@ -86,6 +86,9 @@ namespace Tower.Network
 
         public bool is_host;
         public string joined_at;
+
+        /// <summary>是否已准备。仅信令侧 room_state 会填充，HTTP 房间详情里恒为 false。</summary>
+        public bool ready;
     }
 
     /// <summary>房间详情。对应服务端 room.Snapshot。</summary>
@@ -155,6 +158,28 @@ namespace Tower.Network
         public long ttl;
     }
 
+    /// <summary>撤离结算请求。客户端提交本局战利品清单，服务端直接落库（本期不做校验）。</summary>
+    [Serializable]
+    public sealed class ExtractionRequestDto
+    {
+        /// <summary>撤离时的层数。</summary>
+        public int floor;
+
+        /// <summary>本局拾取的战利品清单。</summary>
+        public ExtractionItemDto[] items;
+    }
+
+    /// <summary>撤离结算中的单件战利品。</summary>
+    [Serializable]
+    public sealed class ExtractionItemDto
+    {
+        /// <summary>物品定义 ID（对应 ItemDefinition.Id）。</summary>
+        public string definition_id;
+
+        /// <summary>剩余耐久。非耐久物品为 0。</summary>
+        public int durability;
+    }
+
     /// <summary>服务端统一错误响应体。</summary>
     [Serializable]
     public sealed class ErrorResponseDto
@@ -168,26 +193,5 @@ namespace Tower.Network
     {
         public string code;
         public string message;
-    }
-
-    /// <summary>本局游戏会话。对应服务端 room.GameSession。</summary>
-    [Serializable]
-    public sealed class GameSessionDto
-    {
-        public string session_id;
-        public string room_code;
-        public string transport_mode;
-        public long host_account_id;
-        public string host_address;
-        public int host_port;
-        public string status;
-    }
-
-    /// <summary>标记会话就绪请求。</summary>
-    [Serializable]
-    public sealed class SessionReadyRequestDto
-    {
-        public string host_address;
-        public int host_port;
     }
 }

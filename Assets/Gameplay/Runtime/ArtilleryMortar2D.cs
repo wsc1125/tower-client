@@ -57,6 +57,7 @@ public sealed class ArtilleryMortar2D : MonoBehaviour
         {
             var warning = Instantiate(warningPrefab, targetPosition, Quaternion.identity);
             warning.Play(warningDuration, blastRadius);
+            SpawnIfServer(warning.gameObject);
         }
 
         if (shellPrefab != null)
@@ -69,6 +70,23 @@ public sealed class ArtilleryMortar2D : MonoBehaviour
                 shellFlightTime,
                 blastRadius,
                 blastDamage);
+            SpawnIfServer(shell.gameObject);
         }
+    }
+
+    /// <summary>
+    /// 联机主机：把运行时生成的攻击物注册进 NGO，由 NGO 自动同步到所有客户端。
+    /// 参数在各攻击物的 OnNetworkSpawn 里由主机写入并同步。
+    /// 单机时 NetworkManager 未启动，直接跳过，行为与改造前一致。
+    /// </summary>
+    private static void SpawnIfServer(GameObject target)
+    {
+        var nm = Unity.Netcode.NetworkManager.Singleton;
+        if (nm == null || !nm.IsListening || !nm.IsServer)
+            return;
+
+        var netObj = target.GetComponent<Unity.Netcode.NetworkObject>();
+        if (netObj != null && !netObj.IsSpawned)
+            netObj.Spawn(true);
     }
 }

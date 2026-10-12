@@ -285,6 +285,7 @@ GameObject:
   - component: {fileID: 272804187609970845}
   - component: {fileID: 2378673160742410763}
   - component: {fileID: 4954624403984087920}
+  - component: {fileID: 9215568830826839754}
   m_Layer: 0
   m_Name: Character_Base
   m_TagString: Untagged
@@ -490,6 +491,9 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   movement: {fileID: 0}
+  deathSprite: {fileID: 21300000, guid: 860a3cd25d13b0943845c48cad481d47, type: 3}
+  maxReportedSpeed: 30
+  summonSafeRadius: 8
 --- !u!114 &272804187609970845
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -538,6 +542,18 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   dropPrefab: {fileID: 0}
+--- !u!114 &9215568830826839754
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 2260301540689113387}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9d6add903ba557848a6a8457727c51e2, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
 --- !u!1 &2851256417521745383
 GameObject:
   m_ObjectHideFlags: 0

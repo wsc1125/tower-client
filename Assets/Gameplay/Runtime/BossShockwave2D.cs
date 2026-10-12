@@ -1,3 +1,4 @@
+using Unity.Netcode;
 using UnityEngine;
 
 /// <summary>
@@ -5,12 +6,25 @@ using UnityEngine;
 /// 与 <see cref="ArtilleryShell2D"/> 的区别：冲击波不飞行、不锁定落点，
 /// 而是原地扩散，因此不需要抛物线，只需要「扩散到最大半径 → 结算 → 销毁」。
 /// 伤害在扩散到最大半径的那一刻结算，给玩家留出向外跑的反应时间。
+///
+/// 联机：由主机生成并 <c>Spawn</c>，半径与伤害通过 NetworkVariable 广播，
+/// 客户端按同一套扩散公式复现，**不结算伤害**。
+/// 单机模式下 prefab 上没有 NetworkObject，<see cref="IsSpawned"/> 恒为 false，
+/// 走本地分支，行为与改造前完全一致。
 /// </summary>
-public sealed class BossShockwave2D : MonoBehaviour
+public sealed class BossShockwave2D : NetworkBehaviour
 {
     [SerializeField] private SpriteRenderer spriteRenderer;
     [SerializeField] private float expandDuration = 0.45f;
     [SerializeField] private float startScale = 0.2f;
+
+    /// <summary>权威伤害半径。主机写入，客户端只读。</summary>
+    private readonly NetworkVariable<float> syncedRadius =
+        new NetworkVariable<float>(3.2f, writePerm: NetworkVariableWritePermission.Server);
+
+    /// <summary>权威伤害。主机写入，客户端只读。</summary>
+    private readonly NetworkVariable<float> syncedDamage =
+        new NetworkVariable<float>(26f, writePerm: NetworkVariableWritePermission.Server);
 
     private float radius;
     private float damage;
@@ -20,14 +34,57 @@ public sealed class BossShockwave2D : MonoBehaviour
     private bool damageDealt;
     private Collider2D ownerCollider;
 
+    /// <summary>本端是否为权威端（主机 / 单机）。</summary>
+    private bool IsAuthority => !IsSpawned || IsServer;
+
     private void Awake()
     {
         if (spriteRenderer == null)
             spriteRenderer = GetComponentInChildren<SpriteRenderer>();
     }
 
+    public override void OnNetworkSpawn()
+    {
+        base.OnNetworkSpawn();
+
+        if (IsServer)
+        {
+            // 主机：此时 NetworkVariable 已初始化，写入会正常标记 dirty 并同步给客户端。
+            PublishParams();
+        }
+        else
+        {
+            // 客户端：先按当前值启动表现，再订阅变化 —— 主机写入的 Delta 可能晚一帧到达。
+            Play(syncedRadius.Value, syncedDamage.Value, null);
+            syncedRadius.OnValueChanged += HandleRadiusChanged;
+            syncedDamage.OnValueChanged += HandleDamageChanged;
+        }
+    }
+
+    public override void OnNetworkDespawn()
+    {
+        if (!IsServer)
+        {
+            syncedRadius.OnValueChanged -= HandleRadiusChanged;
+            syncedDamage.OnValueChanged -= HandleDamageChanged;
+        }
+
+        base.OnNetworkDespawn();
+    }
+
+    private void HandleRadiusChanged(float previous, float current)
+    {
+        Play(current, syncedDamage.Value, null);
+    }
+
+    private void HandleDamageChanged(float previous, float current)
+    {
+        Play(syncedRadius.Value, current, null);
+    }
+
     /// <summary>
     /// 开始扩散。radius 为最终伤害半径，ownerCollider 为 BOSS 自身碰撞体（用于避免自伤判定）。
+    /// 主机调用。
     /// </summary>
     public void Play(float blastRadius, float blastDamage, Collider2D owner = null)
     {
@@ -45,6 +102,17 @@ public sealed class BossShockwave2D : MonoBehaviour
         baseScale = spriteWidth > 0.0001f ? diameter / spriteWidth : 1f;
 
         transform.localScale = Vector3.one * (baseScale * startScale);
+
+        // 联机主机：若已 Spawn（例如运行时改参数），立即同步。
+        if (IsSpawned && IsServer)
+            PublishParams();
+    }
+
+    /// <summary>把本地参数写入权威字段。仅主机调用。</summary>
+    private void PublishParams()
+    {
+        syncedRadius.Value = radius;
+        syncedDamage.Value = damage;
     }
 
     private void Update()
@@ -52,9 +120,9 @@ public sealed class BossShockwave2D : MonoBehaviour
         if (!playing)
             return;
 
-        // 本地冻结（联机弹窗）期间冲击波停住：世界照常推进，但本机看到的扩散暂停。
-        // 单机下 LocalPauseScope.IsFrozen 恒为 false，行为与改造前一致。
-        if (LocalPauseScope.IsFrozen)
+        // 世界冻结（仅单机暂停）期间冲击波停住：联机下世界永不停，扩散照常推进。
+        // 单机下 IsWorldFrozen 与改造前的 timeScale=0 语义一致。
+        if (LocalPauseScope.IsWorldFrozen)
             return;
 
         elapsed += Time.deltaTime;
@@ -70,10 +138,27 @@ public sealed class BossShockwave2D : MonoBehaviour
         if (!damageDealt)
         {
             damageDealt = true;
-            DealDamage();
+
+            // 伤害只在权威端结算：客户端扩散只做表现，避免各端血量不一致。
+            if (IsAuthority)
+                DealDamage();
         }
 
         playing = false;
+        DespawnSelf();
+    }
+
+    /// <summary>
+    /// 销毁自身。联机下**只有主机能销毁已 Spawn 的 NetworkObject** ——
+    /// 客户端本地 Destroy 会报「Destroy a spawned NetworkObject on a non-host client is not valid」，
+    /// 且不会通知主机，导致两端状态不一致。
+    /// 客户端什么都不做，等主机的 Despawn 消息到达后由 NGO 自动销毁。
+    /// </summary>
+    private void DespawnSelf()
+    {
+        if (IsSpawned && !IsServer)
+            return;
+
         Destroy(gameObject);
     }
 

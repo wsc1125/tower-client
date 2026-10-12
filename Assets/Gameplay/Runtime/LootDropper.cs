@@ -84,6 +84,11 @@ public sealed class LootDropper : MonoBehaviour
         if (lootPool == null || dropPrefab == null)
             return;
 
+        // 联机：掉落掷点与生成只在主机执行，客户端由 NGO 同步接收。
+        // 否则各端各自掷点会生成不同的掉落物（且各端各有一份）。
+        if (!IsServerAuthority())
+            return;
+
         random ??= new System.Random();
 
         var items = lootPool.Roll(floor, random);
@@ -95,7 +100,22 @@ public sealed class LootDropper : MonoBehaviour
 
             // 掉落池掷出的是模板，落地时现场创建一个满耐久的实例。
             dropped.Initialize(ItemInstance.Create(item));
+
+            // 联机主机：先把物品信息写入权威字段，再 Spawn —— 使信息随 Spawn 消息一起到达客户端。
+            var netObj = dropped.GetComponent<Unity.Netcode.NetworkObject>();
+            if (netObj != null && !netObj.IsSpawned)
+            {
+                dropped.PublishItemBeforeSpawn();
+                netObj.Spawn(true);
+            }
         }
+    }
+
+    /// <summary>本端是否为权威端（主机 / 单机）。单机时 NetworkManager 未启动，返回 true。</summary>
+    private static bool IsServerAuthority()
+    {
+        var nm = Unity.Netcode.NetworkManager.Singleton;
+        return nm == null || !nm.IsListening || nm.IsServer;
     }
 
     /// <summary>

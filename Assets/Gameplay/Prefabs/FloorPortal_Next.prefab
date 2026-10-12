@@ -11,6 +11,7 @@ GameObject:
   - component: {fileID: 4531997993157491761}
   - component: {fileID: 785005777784751541}
   - component: {fileID: 1882852500782761438}
+  - component: {fileID: 881577951675937421}
   m_Layer: 0
   m_Name: FloorPortal_Next
   m_TagString: Untagged
@@ -89,6 +90,26 @@ MonoBehaviour:
   pulseAmplitude: 0.22
   pulseSpeed: 1.6
   pulseScaleAmplitude: 0.05
+--- !u!114 &881577951675937421
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 3971817524630563523}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: d5a57f767e5e46a458fc5d3c628d0cbb, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: 
+  GlobalObjectIdHash: 951099334
+  AlwaysReplicateAsRoot: 0
+  SynchronizeTransform: 1
+  ActiveSceneSynchronization: 0
+  SceneMigrationSynchronization: 1
+  SpawnWithObservers: 1
+  DontDestroyWithOwner: 0
+  AutoObjectParentSync: 1
 --- !u!1 &4460691181795341335
 GameObject:
   m_ObjectHideFlags: 0

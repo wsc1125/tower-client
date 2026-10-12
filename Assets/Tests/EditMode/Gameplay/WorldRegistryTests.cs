@@ -57,4 +57,32 @@ public sealed class WorldRegistryTests
         Assert.That(WorldRegistry.DroppedItems, Does.Contain(dropped));
         Object.DestroyImmediate(root);
     }
+
+    [Test]
+    public void DroppedItems_EnumerationSurvivesUnregisterDuringCleanup()
+    {
+        var first = new GameObject("FirstDrop");
+        var second = new GameObject("SecondDrop");
+        first.AddComponent<DroppedItem2D>();
+        second.AddComponent<DroppedItem2D>();
+
+        try
+        {
+            var count = 0;
+            Assert.DoesNotThrow(() =>
+            {
+                foreach (var item in WorldRegistry.DroppedItems)
+                {
+                    count++;
+                    WorldRegistry.Unregister(item);
+                }
+            });
+            Assert.That(count, Is.EqualTo(2));
+        }
+        finally
+        {
+            Object.DestroyImmediate(first);
+            Object.DestroyImmediate(second);
+        }
+    }
 }
