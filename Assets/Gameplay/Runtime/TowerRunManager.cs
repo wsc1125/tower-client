@@ -160,6 +160,10 @@ public sealed class TowerRunManager : MonoBehaviour
         SubscribeSettings();
         SubscribeDisconnectCallback();
 
+        // 房主会话结束（房主退出 / 掉线）：成员端据此统一退出本局。
+        // 静态桥事件，OnEnable 订阅 / OnDisable 退订，与场景生命周期对齐。
+        Tower.Netcode.MultiplayerDepartBridge.HostSessionEnded += HandleHostSessionEnded;
+
         // BattleSessionState 是场景内 NetworkObject，OnNetworkSpawn 晚于本组件 OnEnable，
         // 此刻 Instance 可能为 null。用协程重试，直到订阅成功。
         StartCoroutine(SubscribeRunFinishedWhenReady());
@@ -177,6 +181,7 @@ public sealed class TowerRunManager : MonoBehaviour
         UnsubscribeSettings();
         UnsubscribeRunFinished();
         UnsubscribeDisconnectCallback();
+        Tower.Netcode.MultiplayerDepartBridge.HostSessionEnded -= HandleHostSessionEnded;
 
         foreach (var sync in subscribedPlayers)
         {
@@ -331,6 +336,29 @@ public sealed class TowerRunManager : MonoBehaviour
 
         GameSession.AbandonRaid();
         yield return ExitToMainMenu();
+    }
+
+    /// <summary>
+    /// 房主会话结束（房主退出战斗或崩溃掉线）：成员端统一退出本局回主菜单。
+    ///
+    /// 复用 TeamWiped 体验：冻结场景 → 显示提示 → 延迟退出。
+    /// 房主端不会收到本事件（EndHostSession 只在成员端触发），
+    /// 房主自身的退出流程仍走 ConfirmRetreat / HandleQuitRequested 原路径。
+    /// </summary>
+    private void HandleHostSessionEnded(string reason)
+    {
+        if (runFinishedHandled)
+            return;
+
+        runFinishedHandled = true;
+        LocalPauseScope.Freeze();
+
+        if (deathPanel == null)
+            deathPanel = FindObjectOfType<DeathPanelController>();
+        if (deathPanel != null)
+            deathPanel.ShowAutoExit("房主已离开", reason + "，即将返回主菜单");
+
+        StartCoroutine(ExitAfterTeamWipeDelay());
     }
 
     /// <summary>
@@ -1259,9 +1287,10 @@ public sealed class TowerRunManager : MonoBehaviour
         if (session != null && session.CurrentRoom != null)
             yield return session.LeaveOrCloseRoom(null);
 
-        var networkManager = Unity.Netcode.NetworkManager.Singleton;
-        if (networkManager != null && networkManager.IsListening)
-            networkManager.Shutdown();
+        // 必须经协调器关闭：除了停 NGO 释放 7777 端口，还要把状态机
+        // 复位到 Idle 并清空成员表。直接调 NetworkManager.Shutdown 会留下
+        // InGame 状态 —— 下次点出发被静默忽略，表现为「再次联机无响应」。
+        Tower.Netcode.MultiplayerCoordinator.Instance?.Shutdown();
 
         LocalPauseScope.Unfreeze();
         LocalPauseScope.SetSpectating(false);

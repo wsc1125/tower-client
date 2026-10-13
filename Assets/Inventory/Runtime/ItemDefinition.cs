@@ -27,6 +27,9 @@ public sealed class ItemDefinition : ScriptableObject
     [SerializeField] private Sprite[] flashFrames;
     [SerializeField] private Sprite impactSprite;
 
+    [Tooltip("枪口相对贴图垂直中心的高度偏移（占贴图高度的比例，正数向上）。枪管通常画在贴图中线上方，按美术实测填写。")]
+    [SerializeField] private float muzzleHeightRatio;
+
     [Header("防具属性（仅防具槽使用）")]
     [Tooltip("穿戴后提供的减伤率（0~1）。0.15 表示减免 15% 伤害。0 表示不提供减伤。")]
     [Range(0f, 1f)]
@@ -91,6 +94,9 @@ public sealed class ItemDefinition : ScriptableObject
 
     /// 命中特效贴图。为空时回退到现有步枪命中特效。
     public Sprite ImpactSprite => impactSprite;
+
+    /// <summary>枪口相对贴图垂直中心的高度比例（正数向上）。0 表示枪口在贴图中线上。</summary>
+    public float MuzzleHeightRatio => muzzleHeightRatio;
 
     /// <summary>穿戴后提供的减伤率（0~1）。仅防具槽有意义，非防具为 0。</summary>
     public float DamageReduction => Mathf.Clamp01(damageReduction);

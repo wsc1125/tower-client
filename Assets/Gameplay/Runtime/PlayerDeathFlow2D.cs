@@ -192,6 +192,11 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
         if (session != null && session.CurrentRoom != null)
             yield return session.LeaveOrCloseRoom(null);
 
+        // 死亡退出同样要经协调器关闭 NGO：本路径原来不关 NGO，
+        // NetworkManager（DontDestroyOnLoad）会一直监听 7777 端口、
+        // 协调器状态卡在 InGame —— 下次建房出发必然失败。
+        Tower.Netcode.MultiplayerCoordinator.Instance?.Shutdown();
+
         SceneManager.LoadScene(mainMenuSceneName);
     }
 

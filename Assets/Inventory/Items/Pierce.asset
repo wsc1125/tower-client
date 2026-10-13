@@ -29,3 +29,4 @@ MonoBehaviour:
   - {fileID: 21300000, guid: 942f5e71645fdb142816c72b43e0ab08, type: 3}
   - {fileID: 21300000, guid: c59728c5939de3a4da9834d35a039339, type: 3}
   impactSprite: {fileID: 21300000, guid: 7a07974ac496bc148b62b9595c8e55f6, type: 3}
+  muzzleHeightRatio: 0.032

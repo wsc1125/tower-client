@@ -15,7 +15,7 @@ namespace Tower.Netcode
 
         public bool ConfigureHost(NetworkManager networkManager, int port)
         {
-            var transport = networkManager.GetComponent<UnityTransport>();
+            var transport = ResolveUnityTransport(networkManager);
             if (transport == null)
             {
                 Debug.LogError("[LanConnectionStrategy] NetworkManager 上未找到 UnityTransport。");
@@ -30,7 +30,7 @@ namespace Tower.Netcode
 
         public bool ConfigureClient(NetworkManager networkManager, string address, int port)
         {
-            var transport = networkManager.GetComponent<UnityTransport>();
+            var transport = ResolveUnityTransport(networkManager);
             if (transport == null)
             {
                 Debug.LogError("[LanConnectionStrategy] NetworkManager 上未找到 UnityTransport。");
@@ -40,6 +40,22 @@ namespace Tower.Netcode
             transport.SetConnectionData(address, (ushort)port, "0.0.0.0");
 
             return true;
+        }
+
+        /// <summary>
+        /// 取 UTP 传输并恢复为 NGO 的传输组件。
+        ///
+        /// 必须恢复：上一局若用过中继传输，NetworkConfig.NetworkTransport 仍指向
+        /// WebSocketRelayTransport，不切回来的话本局会继续走中继。
+        /// </summary>
+        private static UnityTransport ResolveUnityTransport(NetworkManager networkManager)
+        {
+            var transport = networkManager.GetComponent<UnityTransport>();
+            if (transport == null)
+                return null;
+
+            networkManager.NetworkConfig.NetworkTransport = transport;
+            return transport;
         }
     }
 

@@ -88,7 +88,7 @@ public sealed class WeaponMountSlot : MonoBehaviour
         weaponRenderer.sprite = sprite;
         weaponRenderer.enabled = sprite != null && selected;
 
-        ApplySpriteScale(sprite);
+        ApplySpriteScale(sprite, definition != null ? definition.MuzzleHeightRatio : 0f);
     }
 
     /// <summary>按本机装备刷新一次。供 owner 绑定后强制落地，消除时序依赖。</summary>
@@ -176,17 +176,19 @@ public sealed class WeaponMountSlot : MonoBehaviour
         weaponRenderer.sprite = sprite;
         weaponRenderer.enabled = sprite != null && IsSelected;
 
-        ApplySpriteScale(sprite);
+        ApplySpriteScale(sprite, instance != null && instance.Definition != null ? instance.Definition.MuzzleHeightRatio : 0f);
     }
 
     /// <summary>
-    /// 按目标世界宽度归一武器缩放，并把枪口放到贴图右缘（枪管朝 +x）。
-    /// sprite.bounds 以贴图轴心（握把）为原点：max.x 就是轴心到枪口端的距离。
-    /// 挂点整体在 Visual（局部缩放 0.29）之下，因此局部缩放必须除以父级 lossyScale，
+    /// 按目标世界宽度归一武器缩放，并把枪口放到贴图右缘、对齐枪管高度（枪管朝 +x）。
+    /// sprite.bounds 与 muzzle.localPosition 同处武器节点的局部坐标系（贴图轴心为原点），
+    /// 因此枪口 x 直接取 max.x，不得除以缩放；y 按武器定义的枪管高度比例上移——
+    /// 枪管通常画在贴图中线上方（弹匣、握把在下方），不对齐会导致子弹从枪管下方射出。
+    /// 挂点整体在 Visual（局部缩放 0.29）之下，因此武器局部缩放必须除以父级 lossyScale，
     /// 否则武器实际显示宽度只有目标值的 29%（表现为「武器小到几乎看不见」）。
     /// 场景/预制体上残留的手调缩放与枪口偏移会在每次刷新时被覆盖回正确值。
     /// </summary>
-    private void ApplySpriteScale(Sprite sprite)
+    private void ApplySpriteScale(Sprite sprite, float muzzleHeightRatio)
     {
         if (sprite == null || targetWorldWidth <= 0f)
             return;
@@ -204,6 +206,9 @@ public sealed class WeaponMountSlot : MonoBehaviour
         weaponTransform.localScale = new Vector3(scale, scale, 1f);
 
         if (muzzle != null)
-            muzzle.localPosition = new Vector3(sprite.bounds.max.x / scale, 0f, 0f);
+        {
+            var barrelY = sprite.bounds.center.y + muzzleHeightRatio * sprite.bounds.size.y;
+            muzzle.localPosition = new Vector3(sprite.bounds.max.x, barrelY, 0f);
+        }
     }
 }

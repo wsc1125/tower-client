@@ -690,7 +690,7 @@ MonoBehaviour:
   aimPivot: {fileID: 2222222222222222222}
   muzzle: {fileID: 2038083315659415320}
   muzzleFlash: {fileID: 5627294796445883948}
-  targetWorldWidth: 1.2
+  targetWorldWidth: 0.85
 --- !u!1 &3905002733424279776
 GameObject:
   m_ObjectHideFlags: 0
@@ -873,7 +873,7 @@ MonoBehaviour:
   aimPivot: {fileID: 1111111111111111111}
   muzzle: {fileID: 8129642078354791313}
   muzzleFlash: {fileID: 9066599725235007919}
-  targetWorldWidth: 1.2
+  targetWorldWidth: 0.85
 --- !u!1 &8009046184543900087
 GameObject:
   m_ObjectHideFlags: 0

@@ -14,9 +14,14 @@ public sealed class SpawnerSummoner2D : MonoBehaviour
     [SerializeField] private float spawnRadius = 0.6f;
 
     [Header("上限")]
+    [Tooltip("本母巢同一时间允许存活的虫群数量上限。每只母巢独立计数，互不影响。")]
     [SerializeField] private int maxAliveSwarms = 12;
 
     private EnemyBrain2D brain;
+
+    /// <summary>本母巢自己生成的虫群。超过上限时暂停产虫，个体死亡或到期销毁后自动腾出名额。</summary>
+    private readonly System.Collections.Generic.List<SwarmChaser2D> ownedSwarms
+        = new System.Collections.Generic.List<SwarmChaser2D>();
 
     public int SpawnCountPerAttack => spawnCountPerAttack;
 
@@ -33,8 +38,8 @@ public sealed class SpawnerSummoner2D : MonoBehaviour
         if (swarmPrefab == null || brain == null || brain.IsDead)
             return;
 
-        var alive = CountAliveSwarms();
-        var budget = Mathf.Max(0, maxAliveSwarms - alive);
+        PruneOwnedSwarms();
+        var budget = Mathf.Max(0, maxAliveSwarms - ownedSwarms.Count);
         var count = Mathf.Min(spawnCountPerAttack, budget);
 
         for (var i = 0; i < count; i++)
@@ -46,6 +51,10 @@ public sealed class SpawnerSummoner2D : MonoBehaviour
             // 联机主机：把虫群注册进 NGO，由 NGO 自动同步到所有客户端。
             // 客户端不生成虫群（母巢 AI 已被禁用，不会走到这里）。
             SpawnIfServer(swarm);
+
+            var chaser = swarm.GetComponent<SwarmChaser2D>();
+            if (chaser != null)
+                ownedSwarms.Add(chaser);
         }
     }
 
@@ -64,23 +73,17 @@ public sealed class SpawnerSummoner2D : MonoBehaviour
             netObj.Spawn(true);
     }
 
-    private int CountAliveSwarms()
+    /// <summary>
+    /// 清点本母巢名下仍存活的虫群：剔除已死亡或已销毁（含 20 秒寿命到期）的个体。
+    /// 只统计本巢生成的虫群——其他母巢的产物与场上普通敌人不占本巢名额。
+    /// </summary>
+    private void PruneOwnedSwarms()
     {
-        var count = 0;
-        foreach (var candidate in WorldRegistry.Damageables)
+        for (var i = ownedSwarms.Count - 1; i >= 0; i--)
         {
-            if (candidate == null || candidate.IsDead)
-                continue;
-
-            if (candidate is EnemyBrain2D candidateBrain && candidateBrain == brain)
-                continue;
-
-            if (candidate is EnemyBrain2D enemy && enemy.GetComponent<SpawnerSummoner2D>() != null)
-                continue;
-
-            count++;
+            var swarm = ownedSwarms[i];
+            if (swarm == null || swarm.IsDead)
+                ownedSwarms.RemoveAt(i);
         }
-
-        return count;
     }
 }

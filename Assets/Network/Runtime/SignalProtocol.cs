@@ -315,6 +315,9 @@ namespace Tower.Network
     public sealed class GameStartingPayload
     {
         public long host_account_id;
+
+        /// <summary>服务端判定的传输模式："lan"（全员同公网出口）或 "relay"（存在异网成员）。</summary>
+        public string transport_mode;
     }
 
     /// <summary>房主迁移。客户端收到后需执行权威接管。</summary>

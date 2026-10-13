@@ -71,6 +71,15 @@ namespace Tower.Network
         public event Action RoomLeft;
 
         /// <summary>
+        /// 最近一次 game_starting 携带的传输模式（"lan" / "relay"）。
+        ///
+        /// 由服务端按「全员是否同公网出口」判定。null 表示尚未收到
+        /// （旧服务端无此字段），调用方按局域网直连处理。
+        /// UI 层若需感知开始游戏，直接订阅 <see cref="SignalClient.GameStarting"/>。
+        /// </summary>
+        public string LastTransportMode { get; private set; }
+
+        /// <summary>
         /// 房主迁移。参数为新房主账号 ID。
         ///
         /// 与 <see cref="RoomChanged"/> 分开：房主迁移需要 UI 做额外提示
@@ -104,9 +113,25 @@ namespace Tower.Network
 
             HookSignalEvents();
 
+            // 信令保活：房间挂着不动时，客户端必须定期发心跳，
+            // 否则会被服务端读超时（60 秒）断开，全员被踢出房间。
+            StartCoroutine(SignalHeartbeat());
+
             // 就绪：通知在 Awake 之前就等待的订阅方（如 MultiplayerCoordinator）。
             IsReady = true;
             ReadyStatic?.Invoke();
+        }
+
+        /// <summary>
+        /// 信令消息泵：每帧驱动 SignalClient 把收到的消息派发成事件。
+        ///
+        /// 必须挂在本组件（DontDestroyOnLoad 常驻）上 —— 旧实现把泵放在
+        /// 发起连接的协程尾部，出发进战斗后发起方随场景销毁、泵停转，
+        /// 战斗中收不到 room_closed / member_left，退出后残留幽灵房间。
+        /// </summary>
+        private void Update()
+        {
+            signal?.Pump();
         }
 
         private void OnDestroy()
@@ -146,6 +171,7 @@ namespace Tower.Network
                 yield return signal.Disconnect();
 
             CurrentRoom = null;
+            LastTransportMode = null;
             api.Logout();
 
             // 还原为单机身份 —— 否则后续单机流程会继续读写联机账号的数据。
@@ -215,25 +241,37 @@ namespace Tower.Network
         {
             if (CurrentRoom == null)
             {
+                LastTransportMode = null;
                 onSuccess?.Invoke();
                 yield break;
             }
 
             var code = CurrentRoom.room_code;
 
-            // 先断信令：否则服务端会因连接仍在而认为成员未离开。
+            // 先断信令：服务端在信令断开时即移除成员（并广播 member_left、
+            // 必要时迁移房主/关闭房间），这是该服务端的权威退出路径。
+            var signalDisconnected = false;
             if (signal.IsConnected)
+            {
                 yield return signal.Disconnect();
+                signalDisconnected = true;
+            }
 
             ApiError failure = null;
             yield return api.LeaveRoom(code, _ => { }, error => failure = error);
 
+            // 信令断开时服务端已移除本端成员，此时 HTTP 离开必然返回
+            // 403（你不在该房间内）/ 404（房间不存在）—— 这是预期结果而非错误，
+            // 上报出去会让玩家以为退出失败（退出/解散报错的根源）。
+            // HTTP 调用保留作为兜底：信令断线处理失败（如落库异常）时仍能移除成员。
+            if (failure != null && !signalDisconnected)
+                onError?.Invoke(failure);
+
             CurrentRoom = null;
+            LastTransportMode = null;
             RoomLeft?.Invoke();
 
-            if (failure != null)
-                onError?.Invoke(failure);
-            else
+            if (failure == null || signalDisconnected)
                 onSuccess?.Invoke();
         }
 
@@ -248,18 +286,27 @@ namespace Tower.Network
 
             var code = CurrentRoom.room_code;
 
+            // 顺序与容错同 LeaveRoom：先断信令（服务端据此关房/迁移房主），
+            // 再调 HTTP 关闭兜底。房内还有成员时服务端会先迁移房主，
+            // 此时 HTTP 关闭返回 403（只有房主可以执行此操作）—— 属预期结果。
+            var signalDisconnected = false;
             if (signal.IsConnected)
+            {
                 yield return signal.Disconnect();
+                signalDisconnected = true;
+            }
 
             ApiError failure = null;
             yield return api.CloseRoom(code, () => { }, error => failure = error);
 
+            if (failure != null && !signalDisconnected)
+                onError?.Invoke(failure);
+
             CurrentRoom = null;
+            LastTransportMode = null;
             RoomLeft?.Invoke();
 
-            if (failure != null)
-                onError?.Invoke(failure);
-            else
+            if (failure == null || signalDisconnected)
                 onSuccess?.Invoke();
         }
 
@@ -348,7 +395,20 @@ namespace Tower.Network
             signal.RoomStateReceived += onState;
             signal.ErrorReceived += onErrorEvent;
 
+            // Connect 建立连接后立即返回（消息泵由 Update 驱动），
+            // 因此这里的后续逻辑在「连接期间」就会执行，而不是像旧实现那样
+            // 挂起到断线后才执行 —— 后者会在断线时把旧房间复活成 CurrentRoom。
             yield return signal.Connect(roomCode, api.AccessToken);
+
+            // 握手失败（超时 / 被拒）：上报真实原因，而不是等 room_state 超时。
+            if (!string.IsNullOrEmpty(signal.ConnectError))
+            {
+                signal.RoomStateReceived -= onState;
+                signal.ErrorReceived -= onErrorEvent;
+
+                onError?.Invoke(new ApiError("CONNECT_FAILED", signal.ConnectError));
+                yield break;
+            }
 
             // 等待 room_state 或错误，最多 5 秒。
             var deadline = Time.realtimeSinceStartup + 5f;
@@ -360,17 +420,20 @@ namespace Tower.Network
 
             if (failure != null)
             {
+                yield return signal.Disconnect();
                 onError?.Invoke(failure);
                 yield break;
             }
 
             if (pending == null)
             {
+                yield return signal.Disconnect();
                 onError?.Invoke(new ApiError("TIMEOUT", "等待房间状态超时"));
                 yield break;
             }
 
             CurrentRoom = pending;
+            LastTransportMode = null;
             RoomChanged?.Invoke(pending);
             onSuccess?.Invoke(pending);
         }
@@ -404,6 +467,25 @@ namespace Tower.Network
 
         // ---- 信令事件转发 ----
 
+        /// <summary>
+        /// 信令保活心跳：每 pingIntervalSeconds 秒发一次应用层 ping。
+        ///
+        /// 服务端读超时 60 秒（pongWait）。虽然服务端也会主动发协议层 ping，
+        /// 但客户端主动保活能同时刷新 NAT / 防火墙的空闲连接映射，
+        /// 避免家庭网络下「房间放着不动，几分钟后全员掉线」。
+        /// SendPing 内部已做 IsConnected 检查，未连接时调用是空操作。
+        /// </summary>
+        private IEnumerator SignalHeartbeat()
+        {
+            var interval = new WaitForSeconds(config.pingIntervalSeconds);
+
+            while (true)
+            {
+                yield return interval;
+                signal?.SendPing();
+            }
+        }
+
         private void HookSignalEvents()
         {
             signal.RoomStateReceived += OnRoomState;
@@ -413,6 +495,7 @@ namespace Tower.Network
             signal.RoomClosed += OnRoomClosed;
             signal.Disconnected += OnSignalDisconnected;
             signal.SignalReceived += OnSignalForwarded;
+            signal.GameStarting += OnGameStarting;
         }
 
         private void UnhookSignalEvents()
@@ -427,6 +510,36 @@ namespace Tower.Network
             signal.RoomClosed -= OnRoomClosed;
             signal.Disconnected -= OnSignalDisconnected;
             signal.SignalReceived -= OnSignalForwarded;
+            signal.GameStarting -= OnGameStarting;
+        }
+
+        /// <summary>收到开始游戏广播：缓存服务端判定的传输模式。</summary>
+        private void OnGameStarting(GameStartingPayload payload)
+        {
+            LastTransportMode = payload?.transport_mode;
+        }
+
+        /// <summary>
+        /// 房主发起开始游戏：先清空旧的传输模式，
+        /// 等服务端下发的最新 game_starting 广播回来（含 transport_mode）再启动 NGO。
+        /// </summary>
+        public void RequestStartGame()
+        {
+            LastTransportMode = null;
+            signal?.SendStartGame();
+        }
+
+        /// <summary>
+        /// 构造中继 WebSocket 完整地址（含房间码与令牌）。
+        /// 未在房间内或未登录时返回 null。
+        /// </summary>
+        public string BuildRelayUrl()
+        {
+            if (config == null || CurrentRoom == null || api == null)
+                return null;
+
+            return $"{config.RelayUrl}?room_code={Uri.EscapeDataString(CurrentRoom.room_code)}" +
+                   $"&token={Uri.EscapeDataString(api.AccessToken)}";
         }
 
         /// <summary>
@@ -461,6 +574,7 @@ namespace Tower.Network
         /// </summary>
         private void OnSignalDisconnected(string reason)
         {
+            LastTransportMode = null;
             if (CurrentRoom == null)
                 return;
 
@@ -567,6 +681,7 @@ namespace Tower.Network
             Debug.Log($"[NetworkSession] 房间已关闭: {payload?.reason}");
 
             CurrentRoom = null;
+            LastTransportMode = null;
             RoomLeft?.Invoke();
         }
     }

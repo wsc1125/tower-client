@@ -27,6 +27,9 @@ public sealed class RifleShooter2D : MonoBehaviour
     [SerializeField] private float flashDuration = 0.05f;
     [SerializeField] private float flashFramesPerSecond = 40f;
 
+    [Tooltip("弹丸生成点与玩家中心的最大距离（内收后会对齐到枪管轴线）。枪口在枪管末端、离身体较远，贴身敌人会落入盲区。0 表示不钳制。")]
+    [SerializeField] private float maxSpawnDistance = 0.5f;
+
     private float cooldownRemaining;
     private float recoilRemaining;
     private float flashRemaining;
@@ -272,6 +275,10 @@ public sealed class RifleShooter2D : MonoBehaviour
         // 子弹生成的第一帧就撞到玩家并被销毁（表现为「子弹打不出去」）。
         var ownerCollider = GetComponent<Collider2D>();
 
+        // 枪口离身体较远时把生成点内收并对齐枪管轴线，消除「贴身敌人落在身体与枪口之间、
+        // 子弹生成时已越过敌人」的攻击盲区。枪口火光仍在枪尖，子弹从枪口正后方射出。
+        var spawnPosition = ResolveSpawnPosition(muzzle);
+
         var spawned = new Projectile2D[count];
         for (var i = 0; i < count; i++)
         {
@@ -283,7 +290,7 @@ public sealed class RifleShooter2D : MonoBehaviour
                 direction = Rotate(baseDirection, offset);
             }
 
-            var projectile = Instantiate(projectilePrefab, muzzle.position, Quaternion.identity);
+            var projectile = Instantiate(projectilePrefab, spawnPosition, Quaternion.identity);
             ApplyWeaponVisuals(projectile);
             projectile.Launch(direction, ResolvedBulletSpeed, ResolvedDamage, ownerCollider);
             spawned[i] = projectile;
@@ -306,6 +313,36 @@ public sealed class RifleShooter2D : MonoBehaviour
                     spawned[j].IgnoreCollisionWith(collider);
             }
         }
+    }
+
+    /// <summary>
+    /// 把弹丸生成点限制在玩家中心周围 <see cref="maxSpawnDistance"/> 内，再对齐到枪管轴线上：
+    /// 1) 沿「玩家中心 → 枪口」方向内收超出部分，消除「贴身敌人落在身体与枪口之间、
+    ///    子弹生成时已越过敌人」的攻击盲区；
+    /// 2) 内收点垂直投影回枪管轴线（过枪口、沿 muzzle.right 的直线）。
+    ///    手部挂点比身体中心高，只做第 1 步会让子弹出现在枪口下方；投影后子弹始终
+    ///    从枪口正后方、与枪身同一直线上射出，观感与未钳制时一致。
+    /// </summary>
+    private Vector3 ResolveSpawnPosition(Transform muzzle)
+    {
+        if (maxSpawnDistance <= 0f)
+            return muzzle.position;
+
+        var origin = (Vector2)transform.position;
+        var target = (Vector2)muzzle.position;
+        var offset = target - origin;
+
+        if (offset.sqrMagnitude <= maxSpawnDistance * maxSpawnDistance)
+            return muzzle.position;
+
+        var spawn = origin + offset.normalized * maxSpawnDistance;
+
+        var barrel = (Vector2)muzzle.right;
+        var backAlong = Vector2.Dot(spawn - target, barrel);
+        if (backAlong > 0f)
+            return muzzle.position; // 投影点越过枪口（极端角度），退回枪口本身。
+
+        return target + barrel * backAlong;
     }
 
     private static Vector2 Rotate(Vector2 direction, float degrees)

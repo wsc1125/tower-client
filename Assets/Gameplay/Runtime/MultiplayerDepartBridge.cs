@@ -33,6 +33,15 @@ namespace Tower.Netcode
         /// </summary>
         public static event Action<string> DepartFailed;
 
+        /// <summary>
+        /// 房主会话已结束（房主退出 / 掉线），战斗中的成员端据此统一退出本局。
+        ///
+        /// 与 <see cref="DepartFailed"/> 的区别：DepartFailed 的消费者是主菜单场景的
+        /// DepartFlow，战斗场景里不存在 —— 成员在战斗中收到通知却无人响应，
+        /// 会滞留在已断连的战斗场景。本事件由战斗场景的 TowerRunManager 订阅。
+        /// </summary>
+        public static event Action<string> HostSessionEnded;
+
         /// <summary>触发出发请求。UI 层调用。</summary>
         public static void RequestDepart(bool isHost)
         {
@@ -43,6 +52,12 @@ namespace Tower.Netcode
         public static void NotifyDepartFailed(string reason)
         {
             DepartFailed?.Invoke(reason);
+        }
+
+        /// <summary>通知房主会话结束。Gameplay 侧调用，战斗场景内消费。</summary>
+        public static void NotifyHostSessionEnded(string reason)
+        {
+            HostSessionEnded?.Invoke(reason);
         }
     }
 }

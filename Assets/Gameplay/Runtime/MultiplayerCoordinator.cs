@@ -70,6 +70,12 @@ namespace Tower.Netcode
         /// <summary>clientId → accountId 映射，供玩家生成与身份绑定使用。</summary>
         private readonly Dictionary<ulong, long> clientAccounts = new Dictionary<ulong, long>();
 
+        /// <summary>
+        /// 「房主会话结束」是否已通知战斗场景。
+        /// NGO 断开回调与信令层房主离开可能先后触发，用守卫保证只通知一次。
+        /// </summary>
+        private bool hostSessionEndedNotified;
+
         public MultiplayerState State => state;
 
         /// <summary>状态变化。</summary>
@@ -231,14 +237,13 @@ namespace Tower.Netcode
         // ---- 房主流程 ----
 
         /// <summary>
-        /// 房主出发流程：启动 Host → 广播地址 → **广播开始信号唤醒成员** → 等成员连入 → 切场景。
+        /// 房主出发流程：广播开始信号 → 等传输模式判定 → 启动 Host →（LAN）广播地址 → 等成员连入 → 切场景。
         ///
-        /// 顺序很关键，且与直觉相反：
+        /// 顺序很关键：
         ///   1. 必须先发 start_game —— 成员只有收到它才会启动 Client 去连房主；
-        ///   2. 再等成员连入 —— 若先等再发，房主永远等不到成员（成员没被唤醒），死锁。
-        ///
-        /// 地址获取不依赖房主遍历成员列表（列表可能不全）：
-        /// 成员被唤醒后主动发 tower_addr_req 向房主索取地址，房主收到立即回发。
+        ///      同时房主会收到自己的 game_starting 广播，借此拿到服务端判定的传输模式；
+        ///   2. 再启动 Host —— LAN 模式下成员连接前房主已就绪监听；
+        ///   3. 中继模式无需地址交换（成员经服务端中继连接）。
         /// </summary>
         public IEnumerator StartHostFlow()
         {
@@ -256,9 +261,23 @@ namespace Tower.Netcode
             }
 
             SetState(MultiplayerState.Preparing);
+            hostSessionEndedNotified = false;
 
-            // 1. 启动 Host。
-            var strategy = ConnectionStrategies.For("lan");
+            // 1. 广播开始信号，唤醒成员；同时等自己的 game_starting 广播带回传输模式。
+            session.RequestStartGame();
+
+            var modeDeadline = Time.realtimeSinceStartup + 3f;
+            while (Time.realtimeSinceStartup < modeDeadline && session.LastTransportMode == null)
+                yield return null;
+
+            if (!TryResolveTransportMode(session, out var transportMode))
+            {
+                Fail("未收到有效的服务端传输模式判定");
+                yield break;
+            }
+
+            // 2. 启动 Host。
+            var strategy = CreateStrategy(session, transportMode);
             if (!strategy.ConfigureHost(networkManager, hostPort))
             {
                 Fail("配置房主监听失败");
@@ -273,15 +292,19 @@ namespace Tower.Netcode
 
             SetState(MultiplayerState.Connecting);
 
-            // 2. 广播连接地址（尽力而为，成员列表可能不全，成员端会主动补请求）。
-            var address = LocalAddress();
-            BroadcastAddress(session, address, hostPort);
+            // 3. 局域网模式：广播连接地址（尽力而为，成员端会主动补请求）。
+            //    中继模式：成员经服务端中继连接，无需地址交换。
+            if (transportMode == RelayMode)
+            {
+                Debug.Log($"[MultiplayerCoordinator] 房主已就绪（中继模式）");
+            }
+            else
+            {
+                var address = LocalAddress();
+                BroadcastAddress(session, address, hostPort);
 
-            Debug.Log($"[MultiplayerCoordinator] 房主已就绪，地址 {address}:{hostPort}");
-
-            // 3. 广播开始信号，唤醒成员启动 Client。
-            //    必须在等待之前发 —— 否则成员不会被唤醒，房主永远等不到人。
-            session.Signal?.SendStartGame();
+                Debug.Log($"[MultiplayerCoordinator] 房主已就绪，地址 {address}:{hostPort}");
+            }
 
             // 4. 等待所有房间成员连入。
             SetState(MultiplayerState.WaitingForPlayers);
@@ -347,33 +370,49 @@ namespace Tower.Netcode
             }
 
             SetState(MultiplayerState.Preparing);
+            hostSessionEndedNotified = false;
 
-            // 1. 主动向房主请求地址（房主收到立即回发）。
-            RequestHostAddress(session);
-
-            // 2. 等房主地址（主动请求的响应，或房主主动广播的地址）。
-            var deadline = Time.realtimeSinceStartup + connectTimeoutSeconds;
-            var nextRetry = Time.realtimeSinceStartup + 2f;
-            while (string.IsNullOrEmpty(hostAddress) && Time.realtimeSinceStartup < deadline)
+            // 传输模式由服务端的 game_starting 下发；未收到有效模式不得启动 Client。
+            if (!TryResolveTransportMode(session, out var transportMode))
             {
-                // 每 2 秒重发一次请求，防止首次请求在房主就绪前丢失。
-                if (Time.realtimeSinceStartup >= nextRetry)
-                {
-                    RequestHostAddress(session);
-                    nextRetry = Time.realtimeSinceStartup + 2f;
-                }
-
-                yield return null;
-            }
-
-            if (string.IsNullOrEmpty(hostAddress))
-            {
-                Fail("等待房主地址超时");
+                Fail("未收到有效的服务端传输模式判定");
                 yield break;
             }
 
+            var strategy = CreateStrategy(session, transportMode);
+
+            if (transportMode == RelayMode)
+            {
+                Debug.Log("[MultiplayerCoordinator] 中继模式：经服务端中继连接房主。");
+            }
+            else
+            {
+                // 1. 主动向房主请求地址（房主收到立即回发）。
+                RequestHostAddress(session);
+
+                // 2. 等房主地址（主动请求的响应，或房主主动广播的地址）。
+                var deadline = Time.realtimeSinceStartup + connectTimeoutSeconds;
+                var nextRetry = Time.realtimeSinceStartup + 2f;
+                while (string.IsNullOrEmpty(hostAddress) && Time.realtimeSinceStartup < deadline)
+                {
+                    // 每 2 秒重发一次请求，防止首次请求在房主就绪前丢失。
+                    if (Time.realtimeSinceStartup >= nextRetry)
+                    {
+                        RequestHostAddress(session);
+                        nextRetry = Time.realtimeSinceStartup + 2f;
+                    }
+
+                    yield return null;
+                }
+
+                if (string.IsNullOrEmpty(hostAddress))
+                {
+                    Fail("等待房主地址超时");
+                    yield break;
+                }
+            }
+
             // 3. 启动 Client。
-            var strategy = ConnectionStrategies.For("lan");
             if (!strategy.ConfigureClient(networkManager, hostAddress, hostPort))
             {
                 Fail("配置连接目标失败");
@@ -396,8 +435,8 @@ namespace Tower.Netcode
             Debug.Log($"[MultiplayerCoordinator] 正在连接房主 {hostAddress}:{hostPort}");
 
             // 4. 等待连接成功或超时。场景切换由 Host 发起，这里只等。
-            deadline = Time.realtimeSinceStartup + connectTimeoutSeconds;
-            while (Time.realtimeSinceStartup < deadline)
+            var connectedDeadline = Time.realtimeSinceStartup + connectTimeoutSeconds;
+            while (Time.realtimeSinceStartup < connectedDeadline)
             {
                 if (networkManager.IsConnectedClient)
                 {
@@ -424,6 +463,34 @@ namespace Tower.Netcode
 
             Debug.Log($"[MultiplayerCoordinator] 请求房主地址 → 账号 #{hostId}");
             session.Signal.SendSignal(hostId, AddressRequest);
+        }
+
+        // ---- 传输模式 ----
+
+        /// <summary>服务端下发的传输模式标识。</summary>
+        private const string RelayMode = "relay";
+        private const string LanMode = "lan";
+
+        private static bool TryResolveTransportMode(NetworkSession session, out string mode)
+        {
+            mode = session.LastTransportMode;
+            return mode == RelayMode || mode == LanMode;
+        }
+
+        /// <summary>按传输模式构造连接策略。</summary>
+        private static IConnectionStrategy CreateStrategy(Tower.Network.NetworkSession session, string mode)
+        {
+            if (mode == RelayMode)
+            {
+                // 日志只打基地址，不打含 token 的完整 URL。
+                Debug.Log($"[MultiplayerCoordinator] 传输模式：中继（{session.Config?.RelayUrl}）");
+                return new RelayConnectionStrategy(session.BuildRelayUrl());
+            }
+
+            if (mode == LanMode)
+                return ConnectionStrategies.For(LanMode);
+
+            throw new ArgumentException($"未知的传输模式：{mode}", nameof(mode));
         }
 
         // ---- 地址交换 ----
@@ -607,9 +674,29 @@ namespace Tower.Netcode
 
             Debug.Log($"[MultiplayerCoordinator] 客户端已断开 {clientId}（{ConnectedMemberCount}/{ExpectedMemberCount}）");
 
-            // 成员端与房主断开：进入失败状态，不静默留在战斗里。
+            // 成员端与房主断开：房主主动退出战斗或崩溃掉线，两种情况本局都已结束。
+            // 必须通知战斗场景统一退出 —— 否则成员滞留在已断连的战斗场景里
+            // （Fail 的消费者 DepartFlow 只存在于主菜单场景，战斗中无人响应）。
             if (!networkManager.IsServer && state == MultiplayerState.InGame)
+            {
+                EndHostSession("房主已离开，本局结束");
                 Fail("与房主的连接已断开");
+            }
+        }
+
+        /// <summary>
+        /// 房主会话结束：通知战斗场景的成员端统一退出本局。
+        ///
+        /// 两条路径汇合于此，且可能都触发（信令层往往先检测到，NGO 断开回调随后），
+        /// 用 <see cref="hostSessionEndedNotified"/> 幂等，避免成员端重复弹退出提示。
+        /// </summary>
+        private void EndHostSession(string reason)
+        {
+            if (hostSessionEndedNotified)
+                return;
+
+            hostSessionEndedNotified = true;
+            MultiplayerDepartBridge.NotifyHostSessionEnded(reason);
         }
 
         /// <summary>
@@ -636,6 +723,9 @@ namespace Tower.Netcode
 
             SetState(MultiplayerState.Failed);
             Failed?.Invoke("房主已离开，房间已解散");
+
+            // 战斗中的成员端也要退出本局 —— 否则同样滞留在战斗场景。
+            EndHostSession("房主已离开，房间已解散");
         }
 
         /// <summary>登记某客户端对应的账号（连接审批通过后调用）。</summary>

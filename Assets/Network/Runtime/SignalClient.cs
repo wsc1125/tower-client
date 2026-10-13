@@ -45,8 +45,17 @@ namespace Tower.Network
         /// <summary>是否已连接。</summary>
         public bool IsConnected => socket != null && socket.State == WebSocketState.Open;
 
-        /// <summary>当前所在房间码。</summary>
+        /// <summary>当前房间码。</summary>
         public string RoomCode => roomCode;
+
+        /// <summary>
+        /// 最近一次连接失败的描述。连接成功或重新发起连接时清空。
+        ///
+        /// 握手被拒（如 403「你不在该房间内」）时 ClientWebSocket 会抛异常，
+        /// Connect 据此把真实原因记录在这里，供调用方上报 ——
+        /// 否则调用方只能等 room_state 超时，看不到服务端给的具体原因。
+        /// </summary>
+        public string ConnectError { get; private set; }
 
         // ---- 事件（全部在主线程触发）----
 
@@ -86,16 +95,19 @@ namespace Tower.Network
         }
 
         /// <summary>
-        /// 连接信令服务器。
+        /// 连接信令服务器。连接建立后**立即返回**，不负责后续消息泵送。
         ///
-        /// 必须在 MonoBehaviour 的协程里 yield 本方法 —— 它内部靠
-        /// <see cref="Pump"/> 驱动主线程派发，不 yield 就收不到消息。
+        /// 历史教训：本方法曾在尾部死循环泵消息直到断开 —— 调用方若
+        /// `yield return Connect(...)` 会挂起到断线，断线后恢复时还会把
+        /// 旧房间状态复活成 CurrentRoom（幽灵房间）。泵送改由
+        /// <see cref="NetworkSession"/> 每帧调用 <see cref="Pump"/> 驱动。
         /// </summary>
         public IEnumerator Connect(string roomCode, string accessToken)
         {
             if (IsConnected)
                 yield return Disconnect();
 
+            ConnectError = null;
             this.roomCode = roomCode;
             token = accessToken;
 
@@ -113,7 +125,7 @@ namespace Tower.Network
                 if (Time.realtimeSinceStartup > deadline)
                 {
                     AbortSocket();
-                    Disconnected?.Invoke("连接超时");
+                    ConnectError = "连接超时";
                     yield break;
                 }
 
@@ -124,7 +136,7 @@ namespace Tower.Network
             {
                 var reason = connectTask.Exception?.GetBaseException().Message ?? "连接失败";
                 AbortSocket();
-                Disconnected?.Invoke(reason);
+                ConnectError = reason;
                 yield break;
             }
 
@@ -135,17 +147,8 @@ namespace Tower.Network
 
             // 连接后立刻发一条 join_room，让服务端下发房间状态。
             // 服务端在握手时已按 query 参数登记，这里只是显式触发状态下发。
+            // 首条 room_state 会由 NetworkSession 的 Update → Pump 派发。
             SendJoinRoom(roomCode);
-
-            // 持续泵消息，直到连接断开。
-            while (IsConnected)
-            {
-                Pump();
-                yield return null;
-            }
-
-            Pump();
-            Disconnected?.Invoke("连接已关闭");
         }
 
         /// <summary>断开连接。</summary>
@@ -300,15 +303,22 @@ namespace Tower.Network
 
         // ---- 主线程派发 ----
 
-        /// <summary>把队列里的消息取出并派发事件。必须在主线程调用。</summary>
-        private void Pump()
+        /// <summary>
+        /// 把队列里的消息取出并派发事件。必须在主线程调用。
+        ///
+        /// 由 <see cref="NetworkSession"/> 每帧驱动（挂在 DontDestroyOnLoad 的
+        /// 常驻对象上）—— 不能挂在「发起连接的场景对象」上，否则出发进战斗后
+        /// 发起方随场景销毁，泵停转，战斗中将收不到任何信令（含 room_closed）。
+        /// </summary>
+        public void Pump()
         {
             while (inbox.TryDequeue(out var raw))
             {
                 if (raw == null)
                 {
-                    // 连接已关闭的哨兵。
+                    // 连接已关闭的哨兵（服务端主动断开 / 接收循环异常）。
                     AbortSocket();
+                    Disconnected?.Invoke("连接已关闭");
                     return;
                 }
 

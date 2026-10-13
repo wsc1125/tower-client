@@ -36,20 +36,24 @@ namespace Tower.Network
         public string ApiBase => baseUrl.TrimEnd('/') + apiPrefix;
 
         /// <summary>WebSocket 信令地址，如 ws://localhost:8080/api/v1/signal。</summary>
-        public string SignalUrl
+        public string SignalUrl => TransformToWebSocket(baseUrl) + apiPrefix + "/signal";
+
+        /// <summary>WebSocket 战斗中继地址，如 ws://localhost:8080/api/v1/relay-ws。</summary>
+        public string RelayUrl => TransformToWebSocket(baseUrl) + apiPrefix + "/relay-ws";
+
+        /// <summary>把 http/https 基地址转换为 ws/wss。</summary>
+        private static string TransformToWebSocket(string httpUrl)
         {
-            get
-            {
-                var trimmed = baseUrl.TrimEnd('/');
+            var trimmed = httpUrl.TrimEnd('/');
 
-                // http → ws，https → wss。用 https 时若仍是 ws:// 会被系统拒绝。
-                if (trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
-                    trimmed = "wss://" + trimmed.Substring("https://".Length);
-                else if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
-                    trimmed = "ws://" + trimmed.Substring("http://".Length);
+            // http → ws，https → wss。用 https 时若仍是 ws:// 会被系统拒绝。
+            if (trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                return "wss://" + trimmed.Substring("https://".Length);
 
-                return trimmed + apiPrefix + "/signal";
-            }
+            if (trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase))
+                return "ws://" + trimmed.Substring("http://".Length);
+
+            return trimmed;
         }
 
         /// <summary>本地开发默认配置。</summary>
