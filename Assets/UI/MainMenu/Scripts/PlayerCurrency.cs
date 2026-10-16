@@ -43,6 +43,26 @@ public sealed class PlayerCurrency : MonoBehaviour
             Active = null;
     }
 
+    private void OnEnable()
+    {
+        // 云同步回灌：服务端快照落地后刷新运行时显示。
+        // Network 程序集不能引用 UI 层，由本组件主动订阅（事件反转）。
+        Tower.Network.AssetSyncService.SnapshotApplied += OnSnapshotApplied;
+    }
+
+    private void OnDisable()
+    {
+        Tower.Network.AssetSyncService.SnapshotApplied -= OnSnapshotApplied;
+    }
+
+    private void OnSnapshotApplied(int value)
+    {
+        if (Tower.Network.AssetSyncService.Instance == null)
+            return;
+
+        ApplyExternal(value);
+    }
+
     /// <summary>增加余额（出售获得）。金额小于等于 0 时不生效。</summary>
     public void Add(int amount)
     {
@@ -81,6 +101,7 @@ public sealed class PlayerCurrency : MonoBehaviour
         PlayerPrefs.Save();
         RefreshDisplay();
         Changed?.Invoke(balance);
+        Tower.Network.AssetSyncService.MarkDirty();
     }
 
     private void RefreshDisplay()

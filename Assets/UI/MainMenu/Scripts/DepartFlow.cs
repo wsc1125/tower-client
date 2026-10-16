@@ -123,6 +123,14 @@ public sealed class DepartFlow : MonoBehaviour
         if (isLoading)
             return;
 
+        // 登录门槛：未登录或资产尚未同步完成时不允许出发（设计文档 §7/§8）。
+        var assetSync = Tower.Network.AssetSyncService.Instance;
+        if (assetSync == null || assetSync.State != Tower.Network.AssetSyncState.Ready)
+        {
+            roomBinder?.ShowDepartError("请先登录并等待资产同步完成");
+            return;
+        }
+
         // 身份跟随登录态：登录后用账号档，未登录用单机 local 档。
         // 单机与联机共用同一身份，保证主菜单配装与局内读取落在同一上下文。
         SyncPlayerIdentity();
@@ -150,6 +158,7 @@ public sealed class DepartFlow : MonoBehaviour
 
             GameSession.BeginRaid();
             GameSession.Persist();
+            Tower.Network.AssetSyncService.Instance?.FlushNow();
 
             // 通知 Gameplay 侧启动联机（房主 Host / 成员 Client）。
             // UI 层无法引用 MultiplayerCoordinator，走静态事件桥接。
@@ -198,6 +207,7 @@ public sealed class DepartFlow : MonoBehaviour
         // 会话是进程内单例，局内场景拿到的是同一个对象，因此不存在「存档没落盘导致装备带不进去」。
         GameSession.BeginRaid();
         GameSession.Persist();
+        Tower.Network.AssetSyncService.Instance?.FlushNow();
 
         // 激活后当前场景连同加载页一起被卸载，无需再还原按钮状态。
         operation.allowSceneActivation = true;

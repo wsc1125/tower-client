@@ -210,7 +210,10 @@ public sealed class PlayerDeathFlow2D : MonoBehaviour
 
     private void AbandonRaid()
     {
-        // 只清局内携带与战利品，局外仓库与装备原样保留。
+        // 只清局内携带与战利品，局外仓库原样保留。
         GameSession.AbandonRaid();
+
+        // 死亡结算为强制上传点：装备清空必须立刻落服务端，防止「死后回档」。
+        Tower.Network.AssetSyncService.Instance?.FlushNow();
     }
 }

@@ -341,6 +341,7 @@ public sealed class TowerRunManager : MonoBehaviour
         }
 
         GameSession.AbandonRaid();
+        Tower.Network.AssetSyncService.Instance?.FlushNow();
         yield return ExitToMainMenu();
     }
 
@@ -1214,6 +1215,9 @@ public sealed class TowerRunManager : MonoBehaviour
         if (overflow > 0)
             Debug.LogWarning($"[TowerRunManager] 仓库已满，有 {overflow} 件战利品未能带出。");
 
+        // 撤离结算为强制上传点：绕过去抖立即同步（失败走退避，不阻塞回城）。
+        Tower.Network.AssetSyncService.Instance?.FlushNow();
+
         // 本地先结算；上报只是尽力而为，服务端未提供路由时不会落库。
         if (payload != null)
             StartCoroutine(SubmitExtractionRoutine(session, payload));
@@ -1290,6 +1294,7 @@ public sealed class TowerRunManager : MonoBehaviour
         AbortRun();
 
         GameSession.AbandonRaid();
+        Tower.Network.AssetSyncService.Instance?.FlushNow();
 
         // 设置面板打开时可能冻结过本地玩家；这里兜底恢复，避免把暂停状态带进主菜单。
         LocalPauseScope.Unfreeze();
