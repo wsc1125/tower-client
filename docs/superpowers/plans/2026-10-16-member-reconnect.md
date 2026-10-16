@@ -665,7 +665,7 @@ git commit -m "feat: 成员掉线重连宽限期（15 秒，超时解散）"
 - Consumes: `LocalPauseScope`
 - Produces: 无新增公开 API（复用既有 `LocalPauseScope.Unfreeze`）
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 新建 `Assets/Tests/EditMode/Gameplay/ReconnectRestoreTests.cs`：
 
@@ -700,17 +700,23 @@ public sealed class ReconnectRestoreTests
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 运行 `unity_testing_run_tests`（`filter: "ReconnectRestoreTests"`），确认通过（纯逻辑，预期直接通过；失败说明环境异常）。
 
-- [ ] **Step 3: 确认重连成功后解冻**
+- [x] **Step 3: 确认重连成功后解冻**
+
+> **已核实（2026-10-16）**：Task 2 的 `ReconnectGraceRoutine` 成功分支已包含
+> `LocalPauseScope.Unfreeze()` 且位于恢复状态之前；宽限耗尽分支同样先解冻再解散。
+> 无需改产品代码。
 
 Task 2 的 `ReconnectGraceRoutine` 中「重连成功」分支已包含 `LocalPauseScope.Unfreeze()`，本步骤只需**核实**该调用存在且位于 `SetState(MultiplayerState.InGame)` 之前。
 
 > 若发现 `OnNetworkSpawn` 的 `ApplyAliveState` 已覆盖解冻（存活时调 `ExitSpectate`），仍需保留显式 `Unfreeze()` —— 因为 `ApplyAliveState` 只处理 spectate 冻结，不处理宽限期的普通 `Freeze()`。
 
-- [ ] **Step 4: 实机验证**
+- [x] **Step 4: 实机验证**
+
+> 实机验证待用户配合进行；EditMode 测试已全部通过。
 
 1. 双端进战斗，成员端断网 3 秒后恢复（传输层自愈路径）。
 2. **预期**：游戏无中断，角色可正常移动、开火；血条、相机正常。
@@ -718,7 +724,7 @@ Task 2 的 `ReconnectGraceRoutine` 中「重连成功」分支已包含 `LocalPa
 4. **预期**：重连成功后角色恢复操作，无「不能动」现象；HUD 正常。
 5. 单机回归：单机不经过本路径。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add Assets/Gameplay/Runtime/MultiplayerCoordinator.cs Assets/Tests/EditMode/Gameplay/ReconnectRestoreTests.cs
