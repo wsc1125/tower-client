@@ -45,8 +45,11 @@ public static class CollectionService
     /// </summary>
     public static event Action<int, CollectionRewardKind> RewardGranted;
 
-    /// <summary>当前进度。首次访问时从存档加载。</summary>
-    public static CollectionProgress Progress => progress ??= CollectionStore.Load();
+    /// <summary>进度写入缓存后触发（云同步据此标脏上传）。</summary>
+    public static event Action ProgressSaved;
+
+    /// <summary>当前进度。首次访问时按当前身份从缓存加载。</summary>
+    public static CollectionProgress Progress => progress ??= CollectionStore.Load(GameSession.LocalPlayerIdValue);
 
     /// <summary>当前图鉴条目（动态计算，已缓存）。</summary>
     public static IReadOnlyList<ItemDefinition> Collectibles
@@ -107,6 +110,7 @@ public static class CollectionService
         {
             CollectionStore.Save(Progress);
             CollectionStore.Flush();
+            ProgressSaved?.Invoke();
         }
 
         return added;
@@ -139,6 +143,7 @@ public static class CollectionService
 
         CollectionStore.Save(Progress);
         CollectionStore.Flush();
+        ProgressSaved?.Invoke();
 
         // 先发单件奖励，再单独发全收集奖励。
         if (itemReward > 0)
@@ -165,6 +170,12 @@ public static class CollectionService
         return Progress.IsObtained(id) ? CollectionState.Obtained : CollectionState.Locked;
     }
 
+    /// <summary>
+    /// 丢弃内存进度，下次访问按当前身份重新从缓存加载。
+    /// 登录切号 / 服务端快照落地后由云同步服务调用。
+    /// </summary>
+    public static void InvalidateProgress() => progress = null;
+
     /// <summary>测试用：丢弃全部运行时状态（存档不受影响）。</summary>
     public static void ResetForTests()
     {
@@ -173,6 +184,7 @@ public static class CollectionService
         progress = null;
         collectibles = null;
         RewardGranted = null;
+        ProgressSaved = null;
     }
 
     private static bool IsCollectible(ItemDefinition definition)

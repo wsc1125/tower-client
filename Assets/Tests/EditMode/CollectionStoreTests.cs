@@ -98,4 +98,23 @@ public sealed class CollectionStoreTests
 
         Assert.That(CollectionStore.HasSave, Is.False);
     }
+
+    [Test]
+    public void SaveData_WithAccountId_WritesAccountScopedKey()
+    {
+        var data = new CollectionSaveData();
+        data.obtainedIds.Add("rifle");
+
+        CollectionStore.SaveData(data, "account-alpha");
+
+        Assert.That(PlayerPrefs.HasKey("CollectionSave:account:account-alpha"), Is.True);
+        Assert.That(PlayerPrefs.HasKey(CollectionStore.PrefsKey), Is.False);
+
+        var loaded = CollectionStore.LoadData("account-alpha");
+        Assert.That(loaded.obtainedIds, Does.Contain("rifle"));
+
+        // local 身份仍读全局键，登录前后互不串档。
+        Assert.That(CollectionStore.HasSave, Is.False);
+        CollectionStore.Delete("account-alpha");
+    }
 }
