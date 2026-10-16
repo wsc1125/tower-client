@@ -42,6 +42,10 @@ namespace Tower.Network
         private NetworkConfig config;
         private ApiClient api;
         private SignalClient signal;
+        private AssetSyncService assetSync;
+
+        /// <summary>资产云同步服务（与本组件同 GameObject，跨场景常驻）。</summary>
+        public AssetSyncService Assets => assetSync;
 
         /// <summary>HTTP 客户端。</summary>
         public ApiClient Api => api;
@@ -111,6 +115,9 @@ namespace Tower.Network
             api = new ApiClient(config);
             signal = new SignalClient(config);
 
+            assetSync = gameObject.AddComponent<AssetSyncService>();
+            assetSync.Initialize(api);
+
             HookSignalEvents();
 
             // 信令保活：房间挂着不动时，客户端必须定期发心跳，
@@ -164,11 +171,15 @@ namespace Tower.Network
                 onError);
         }
 
-        /// <summary>登出：断开信令、清空登录态、把本机玩家身份还原为单机。</summary>
+        /// <summary>登出：断开信令、尽力上传脏资产、清空登录态、把本机玩家身份还原为单机。</summary>
         public IEnumerator Logout()
         {
             if (signal != null && signal.IsConnected)
                 yield return signal.Disconnect();
+
+            // 云存档：登出前尽力把脏资产传上去；失败时 pending 标记已持久化，下次登录自动补传。
+            if (assetSync != null)
+                yield return assetSync.FlushBeforeLogout();
 
             CurrentRoom = null;
             LastTransportMode = null;
@@ -176,6 +187,9 @@ namespace Tower.Network
 
             // 还原为单机身份 —— 否则后续单机流程会继续读写联机账号的数据。
             GameSession.SetLocalPlayerId(null);
+
+            if (assetSync != null)
+                assetSync.OnLoggedOut();
 
             LoggedOut?.Invoke();
         }
@@ -190,6 +204,10 @@ namespace Tower.Network
             // 此后全项目的 GameSession.LocalPlayer 都指向该账号的上下文，
             // 装备 / 携带 / 磨损都落到这个账号上。
             GameSession.SetLocalPlayerId(account.account_id.ToString());
+
+            // 云存档：绑定账号后立即拉取服务端快照（Syncing 状态下出发门禁保持拦截）。
+            if (assetSync != null)
+                assetSync.OnAccountBound(account.account_id.ToString());
 
             LoggedIn?.Invoke(account);
             onSuccess?.Invoke(account);
