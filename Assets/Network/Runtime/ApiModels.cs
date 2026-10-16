@@ -194,4 +194,62 @@ namespace Tower.Network
         public string code;
         public string message;
     }
+
+    // ---- 资产快照 ----
+
+    /// <summary>资产快照协议常量。</summary>
+    public static class AssetSnapshotProtocol
+    {
+        /// <summary>当前客户端快照信封版本。服务端只透传，高于自身已知版本时返回 400。</summary>
+        public const int SchemaVersion = 1;
+
+        /// <summary>快照请求体大小上限（字节）。当前快照约几 KB，仅防滥用。</summary>
+        public const int MaxPayloadBytes = 256 * 1024;
+    }
+
+    /// <summary>
+    /// 资产快照信封：仓库/装备（复用玩家存档 v3 结构）+ 收藏 + 星空币，
+    /// 整包原子上下传。对服务端不透明。
+    /// </summary>
+    [Serializable]
+    public sealed class AssetSnapshotEnvelopeDto
+    {
+        /// <summary>仓库 + 装备槽。直接复用客户端存档结构，零转换。</summary>
+        public PlayerSaveData save;
+
+        /// <summary>收藏进度。</summary>
+        public CollectionSaveData collection;
+
+        /// <summary>星空币余额。</summary>
+        public int currency;
+    }
+
+    /// <summary>GET /assets/snapshot 响应。data 为 null 表示服务端尚无快照（首次登录）。</summary>
+    [Serializable]
+    public sealed class AssetSnapshotResponseDto
+    {
+        public int schema_version;
+
+        /// <summary>服务端自增版本号，每次 PUT +1。用于排查「谁覆盖了谁」。</summary>
+        public long revision;
+
+        public string updated_at;
+        public AssetSnapshotEnvelopeDto data;
+    }
+
+    /// <summary>PUT /assets/snapshot 请求。</summary>
+    [Serializable]
+    public sealed class AssetSnapshotPutRequestDto
+    {
+        public int schema_version;
+        public AssetSnapshotEnvelopeDto data;
+    }
+
+    /// <summary>PUT /assets/snapshot 响应。</summary>
+    [Serializable]
+    public sealed class AssetSnapshotPutResponseDto
+    {
+        public long revision;
+        public string updated_at;
+    }
 }

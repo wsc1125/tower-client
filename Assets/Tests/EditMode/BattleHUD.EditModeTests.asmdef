@@ -4,6 +4,7 @@
   "references": [
     "BattleHUD",
     "Inventory",
+    "Network",
     "Unity.TextMeshPro"
   ],
   "includePlatforms": [

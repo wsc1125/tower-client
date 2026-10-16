@@ -249,6 +249,29 @@ namespace Tower.Network
                 _ => onSuccess?.Invoke(), onError);
         }
 
+        // ---- 资产快照 ----
+
+        /// <summary>拉取当前账号的资产快照。data 为 null 表示首次登录（服务端尚无快照）。</summary>
+        public IEnumerator GetSnapshot(Action<AssetSnapshotResponseDto> onSuccess, Action<ApiError> onError)
+        {
+            return Send<AssetSnapshotResponseDto>(UnityWebRequest.kHttpVerbGET, "/assets/snapshot", null, true,
+                onSuccess, onError);
+        }
+
+        /// <summary>整包上传资产快照（幂等，可安全重试）。服务端 upsert 并自增 revision。</summary>
+        public IEnumerator PutSnapshot(AssetSnapshotEnvelopeDto data,
+            Action<AssetSnapshotPutResponseDto> onSuccess, Action<ApiError> onError)
+        {
+            var body = new AssetSnapshotPutRequestDto
+            {
+                schema_version = AssetSnapshotProtocol.SchemaVersion,
+                data = data,
+            };
+
+            return Send<AssetSnapshotPutResponseDto>(UnityWebRequest.kHttpVerbPUT, "/assets/snapshot", body, true,
+                onSuccess, onError);
+        }
+
         // ---- 头像 ----
 
         /// <summary>
