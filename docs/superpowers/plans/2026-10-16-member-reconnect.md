@@ -70,7 +70,7 @@ NGO 的会话状态由 `NetworkTransport` 投递的事件驱动。只要传输�
   - `WebSocketRelayTransport.MaxReconnectAttempts` → `const int`（= 5）
   - `WebSocketRelayTransport.ReconnectBackoffSeconds(int attempt)` → `float`（静态纯函数，供测试）
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 新建 `Assets/Tests/EditMode/Gameplay/RelayReconnectTests.cs`，只覆盖可纯逻辑验证的部分（退避序列与耗尽判定），不依赖真实 socket：
 
@@ -105,11 +105,11 @@ public sealed class RelayReconnectTests
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 运行 `unity_testing_run_tests`（`mode: "EditMode"`，`filter: "RelayReconnectTests"`），确认**编译失败**（`ReconnectBackoffSeconds` / `ShouldGiveUp` 尚不存在）。
 
-- [ ] **Step 3: 在 `WebSocketRelayTransport` 新增重连参数与纯函数**
+- [x] **Step 3: 在 `WebSocketRelayTransport` 新增重连参数与纯函数**
 
 在 [WebSocketRelayTransport.cs](file:///c:/Users/16648/Desktop/My%20project%20(3)/Assets/Gameplay/Runtime/WebSocketRelayTransport.cs) 的字段区新增：
 
@@ -147,11 +147,11 @@ public static bool ShouldGiveUp(int attempts)
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 运行 `unity_testing_run_tests`（`filter: "RelayReconnectTests"`），确认 2 个测试通过。
 
-- [ ] **Step 5: 改造 `OnSocketClosed` 为重连入口**
+- [x] **Step 5: 改造 `OnSocketClosed` 为重连入口**
 
 > **重要约束（已核实）**：`WebSocketRelayTransport` 继承 `NetworkTransport`，**不是 `MonoBehaviour`**，
 > 因此**不能用 `StartCoroutine` / `WaitForSecondsRealtime`**。它只有 `Update()` 可用。
@@ -350,7 +350,7 @@ private void NotifyTransportClosed(int activeSession)
 
 > **注意**：`Cleanup()` 中需把 `ReconnectAttempts = 0; IsReconnecting = false;` 一并重置，避免跨会话残留。
 
-- [ ] **Step 6: 在 `Update` 中驱动重连状态机，并在 `Cleanup` 中重置**
+- [x] **Step 6: 在 `Update` 中驱动重连状态机，并在 `Cleanup` 中重置**
 
 修改 [Update](file:///c:/Users/16648/Desktop/My%20project%20(3)/Assets/Gameplay/Runtime/WebSocketRelayTransport.cs#L219-L232)，在泵事件之前先驱动重连：
 
@@ -383,7 +383,12 @@ reconnectSession = 0;
 reconnectDeadline = 0f;
 ```
 
-- [ ] **Step 7: 实机验证（双端 + 断网模拟）**
+- [x] **Step 7: 实机验证（双端 + 断网模拟）**
+
+> **实施补充（2026-10-16）**：Step 5-6 落地时发现两个计划盲点，已一并修复：
+> 1. **成员重连后服务端重发 welcome 会触发第二个 Connect 事件**（NGO 已连接状态下重复握手）→ `TryReconnect` 不再重置 `welcomed`，由既有 `!welcomed` 门卫挡住；
+> 2. **成员断开瞬间服务端向房主发 `peer_left`，房主会立即向 NGO 投递 Disconnect**（"NGO 无感知"只在成员端成立）→ 新增房主侧 45 秒 `peer_left` 宽限 + 协议新增 `resume` 控制消息（成员重连成功后立即发出，服务端转发房主，房主静默撤销宽限并恢复数据门卫）。服务端 `hub.go` / `hub_test.go` 已同步改动并通过 `go test`。
+> Step 7 实机验证待用户配合进行（需双端 + 断网模拟）。
 
 1. 启动后端服务（Go 服务端）。
 2. 启动两个客户端，登录不同账号，建房 / 进房，出发进入战斗。
@@ -393,7 +398,7 @@ reconnectDeadline = 0f;
 6. **预期**：成员端日志「重连 5 次均失败，向 NGO 报告断开」→ 走既有解散路径回主菜单。
 7. 单机回归：单机模式不经过本传输，行为不变。
 
-- [ ] **Step 8: 提交**
+- [x] **Step 8: 提交**
 
 ```bash
 git add Assets/Gameplay/Runtime/WebSocketRelayTransport.cs Assets/Tests/EditMode/Gameplay/RelayReconnectTests.cs
