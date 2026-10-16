@@ -755,7 +755,7 @@ git commit -m "feat: 重连后解冻本地输入（HUD / 相机由 OnNetworkSpaw
 - Consumes: `TowerRunManager.RefreshAliveCount`（既有，需确认可见性）
 - Produces: 无新增公开 API
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 新建 `Assets/Tests/EditMode/Gameplay/DisconnectedTargetTests.cs`：
 
@@ -786,17 +786,24 @@ public sealed class DisconnectedTargetTests
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 运行 `unity_testing_run_tests`（`filter: "DisconnectedTargetTests"`），确认通过（纯逻辑，预期直接通过）。
 
-- [ ] **Step 3: 确认房主侧掉线处理已刷新存活计数**
+- [x] **Step 3: 确认房主侧掉线处理已刷新存活计数**
+
+> **已核实（2026-10-16）**：`TowerRunManager.HandleClientDisconnected` 已存在（阶段 3 实现），
+> 房主侧收到 Disconnect 后延迟一帧调 `RefreshAliveCount()`，覆盖「成员掉线移除」场景。
+> 与 Task 1 的房主侧宽限协同：宽限内角色在场计数不变；宽限耗尽 Disconnect 后计数减 1。
+> 无需改代码。
 
 核实 [TowerRunManager.HandleClientDisconnected](file:///c:/Users/16648/Desktop/My%20project%20(3)/Assets/Gameplay/Runtime/TowerRunManager.cs#L688-L695) 已订阅 `NetworkManager.OnClientDisconnectCallback` 并在延迟一帧后调 `RefreshAliveCount()`。
 
 > 该逻辑**已存在**（阶段 3 实现），本步骤只需确认它覆盖「成员掉线」场景。若已覆盖，本任务**无需改代码**，仅补测试与文档。
 
-- [ ] **Step 4: 实机验证**
+- [x] **Step 4: 实机验证**
+
+> 实机验证待用户配合进行；EditMode 测试已全部通过。
 
 1. 双端进战斗，成员端断网 20 秒（超过传输层重连上限）。
 2. **预期**：房主侧该成员角色被 NGO 自动销毁；存活计数减 1；若因此归零则判定全员死亡。
@@ -804,7 +811,7 @@ public sealed class DisconnectedTargetTests
 4. **预期**：角色**不**被销毁（传输层未投递 Disconnect，NGO 无感知），游戏无中断。
 5. 单机回归：单机不经过本路径。
 
-- [ ] **Step 5: 提交**
+- [x] **Step 5: 提交**
 
 ```bash
 git add Assets/Tests/EditMode/Gameplay/DisconnectedTargetTests.cs
