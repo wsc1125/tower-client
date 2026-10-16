@@ -102,6 +102,12 @@ public static class GameSession
     public static event Action RaidChanged;
 
     /// <summary>
+    /// 一局终了（撤离成功或死亡结算）后触发。
+    /// 云同步据此绕过去抖立即上传；未来服务器权威化时，此处即服务端事务接入点。
+    /// </summary>
+    public static event Action RaidEnded;
+
+    /// <summary>
     /// 初始化会话：注入物品登记表，从存档还原局外数据；没有存档时写入初始装备。
     /// 重复调用是安全的（幂等），场景切换时两个场景都会调一次。
     /// </summary>
@@ -147,6 +153,7 @@ public static class GameSession
         var overflow = LoadoutService.ExtractToLoadout(player.Raid, player.Loadout);
         PlayerSaveStore.Save(player.Loadout, localPlayerId);
         PlayerSaveStore.Flush();
+        RaidEnded?.Invoke();
         return overflow;
     }
 
@@ -163,6 +170,7 @@ public static class GameSession
         player.Loadout.Equipment.Clear();
         player.Raid.NotifyChanged();
         player.Loadout.NotifyChanged();
+        RaidEnded?.Invoke();
     }
 
     /// <summary>把当前局外数据落盘。</summary>
@@ -170,6 +178,22 @@ public static class GameSession
     {
         PlayerSaveStore.Save(LocalPlayer.Loadout, localPlayerId);
         PlayerSaveStore.Flush();
+    }
+
+    /// <summary>
+    /// 丢弃指定玩家的运行时上下文并从本地缓存重新加载。
+    /// 云同步把服务端快照写入缓存后调用，使上下文与服务端数据一致。
+    /// 未加载过的玩家不做任何事。
+    /// </summary>
+    public static void ReloadPlayer(string playerId)
+    {
+        var resolvedId = string.IsNullOrWhiteSpace(playerId) ? LocalPlayerId : playerId;
+        if (!loadedPlayers.Remove(resolvedId))
+            return;
+
+        // 旧上下文连同其事件订阅一起被丢弃，GetPlayer 会创建新上下文并重新接线。
+        players.Remove(resolvedId);
+        InitializePlayer(resolvedId);
     }
 
     /// <summary>清空全部数据并删除存档。仅用于「重新开始」与测试。</summary>

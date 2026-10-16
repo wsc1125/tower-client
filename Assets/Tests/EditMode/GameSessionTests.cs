@@ -338,6 +338,48 @@ public sealed class GameSessionTests
         Assert.That(GameSession.Loadout.WarehouseCount(), Is.Zero);
     }
 
+    [Test]
+    public void ReloadPlayer_RestoresContextFromFreshCache()
+    {
+        var rifle = TestItems.WeaponInstance("步枪");
+        var shotgun = TestItems.WeaponInstance("霰弹枪");
+        Register(rifle.Definition, shotgun.Definition);
+        GameSession.EnsureInitialized(database);
+        GameSession.SetLocalPlayerId("account-alpha");
+        GameSession.LocalPlayer.Loadout.Equipment.Set(EquipmentSlotType.MainHand, rifle);
+
+        // 模拟云同步落地：直接改写缓存，再要求上下文重载。
+        var fresh = PlayerSaveData.CreateEmpty();
+        fresh.warehouse.Add(new PlayerSaveData.SlotEntry("0", shotgun.Definition.Id, shotgun.InstanceId, -1));
+        PlayerSaveStore.Save(fresh, "account-alpha");
+        PlayerSaveStore.Flush();
+
+        GameSession.ReloadPlayer("account-alpha");
+
+        var loadout = GameSession.LocalPlayer.Loadout;
+        Assert.That(loadout.Equipment.Get(EquipmentSlotType.MainHand), Is.Null);
+        Assert.That(loadout.GetWarehouse(0).Definition.Id, Is.EqualTo(shotgun.Definition.Id));
+    }
+
+    [Test]
+    public void RaidEnded_FiresOnExtractAndAbandon()
+    {
+        var fired = 0;
+        System.Action handler = () => fired++;
+        GameSession.RaidEnded += handler;
+        try
+        {
+            GameSession.EnsureInitialized(database);
+            GameSession.ExtractRaid();
+            GameSession.AbandonRaid();
+            Assert.That(fired, Is.EqualTo(2));
+        }
+        finally
+        {
+            GameSession.RaidEnded -= handler;
+        }
+    }
+
     private void Register(params ItemDefinition[] items)
     {
         var serialized = new SerializedObject(database);
