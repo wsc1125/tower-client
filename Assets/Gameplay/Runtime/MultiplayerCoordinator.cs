@@ -28,6 +28,9 @@ namespace Tower.Netcode
         /// <summary>已进入战斗。</summary>
         InGame,
 
+        /// <summary>成员端与房主断开，正在宽限期内尝试重连。</summary>
+        Reconnecting,
+
         /// <summary>正在断开。</summary>
         Disconnecting,
 
@@ -55,6 +58,9 @@ namespace Tower.Netcode
 
         [Tooltip("战斗场景名，需已在 Build Settings 登记。")]
         [SerializeField] private string battleSceneName = "BattleScene";
+
+        /// <summary>成员掉线后的重连宽限期（秒）。超时才解散本局。</summary>
+        public const float ReconnectGraceSeconds = 15f;
 
         private static MultiplayerCoordinator instance;
 
@@ -674,14 +680,79 @@ namespace Tower.Netcode
 
             Debug.Log($"[MultiplayerCoordinator] 客户端已断开 {clientId}（{ConnectedMemberCount}/{ExpectedMemberCount}）");
 
-            // 成员端与房主断开：房主主动退出战斗或崩溃掉线，两种情况本局都已结束。
-            // 必须通知战斗场景统一退出 —— 否则成员滞留在已断连的战斗场景里
-            // （Fail 的消费者 DepartFlow 只存在于主菜单场景，战斗中无人响应）。
-            if (!networkManager.IsServer && state == MultiplayerState.InGame)
+            // 成员端与房主断开：先给宽限期等重连，超时才解散本局。
+            // 走到这里说明传输层（WebSocketRelayTransport）的重连已耗尽，
+            // NGO 会话已销毁 —— 宽限期内要重新走一遍 StartClientFlow，而非等 NGO 自愈。
+            if (ShouldEnterGrace(state, networkManager.IsServer))
             {
+                StartCoroutine(ReconnectGraceRoutine());
+            }
+            else if (!networkManager.IsServer && state == MultiplayerState.InGame)
+            {
+                // 宽限守卫未命中（理论上不会发生，兜底）：走既有解散路径。
                 EndHostSession("房主已离开，本局结束");
                 Fail("与房主的连接已断开");
             }
+        }
+
+        /// <summary>
+        /// 是否应进入重连宽限期。
+        ///
+        /// 只有「成员端 + 战斗中」才进：房主是 NGO 拓扑中心，掉线无法迁移，仍走解散；
+        /// 主菜单掉线无需宽限（没有战斗状态要保）。
+        /// </summary>
+        public static bool ShouldEnterGrace(MultiplayerState state, bool isServer)
+        {
+            return !isServer && state == MultiplayerState.InGame;
+        }
+
+        /// <summary>
+        /// 重连宽限期：冻结本地输入、提示「正在重连…」，并反复重新发起连接流程。
+        ///
+        /// 走到这里说明传输层重连已耗尽、NGO 会话已销毁 —— 因此不能等 NGO 自愈，
+        /// 必须重新 StartClient。复用 StartClientFlow：它已处理「请求房主地址 →
+        /// 启动 Client → 等连接」的完整流程，房主侧会为新连接重新生成玩家对象。
+        ///
+        /// 注意：StartClientFlow 内部的连接超时（默认 30 秒）不可中断，
+        /// 实际解散可能晚于 <see cref="ReconnectGraceSeconds"/> —— 每次重试完整走完后才检查截止时间。
+        /// </summary>
+        private IEnumerator ReconnectGraceRoutine()
+        {
+            SetState(MultiplayerState.Reconnecting);
+            LocalPauseScope.Freeze();
+            MultiplayerDepartBridge.NotifyReconnectStarted();
+
+            // 释放已死的 NGO 会话，否则 StartClient 会因「已在监听」而失败。
+            if (networkManager != null && networkManager.IsListening)
+                networkManager.Shutdown();
+
+            var deadline = Time.realtimeSinceStartup + ReconnectGraceSeconds;
+
+            // 反复重试：StartClientFlow 的守卫要求 state 为 Idle / Failed，
+            // 每轮重试前重置（StartClientFlow 失败时自身会置 Failed，但连接成功则停在 Connecting）。
+            while (Time.realtimeSinceStartup < deadline)
+            {
+                SetState(MultiplayerState.Failed);
+                yield return StartClientFlow();
+
+                if (networkManager != null && networkManager.IsConnectedClient)
+                {
+                    Debug.Log("[MultiplayerCoordinator] 重连成功，恢复游戏。");
+                    LocalPauseScope.Unfreeze();
+                    MultiplayerDepartBridge.NotifyReconnectEnded();
+                    // NGO 场景管理会把本端同步回房主当前场景，InGame 由
+                    // NotifyBattleSceneReady 恢复；这里兜底置位（幂等）。
+                    SetState(MultiplayerState.InGame);
+                    yield break;
+                }
+            }
+
+            // 宽限期耗尽：走既有解散路径。
+            Debug.LogWarning($"[MultiplayerCoordinator] 重连宽限期（{ReconnectGraceSeconds} 秒）耗尽，解散本局。");
+            LocalPauseScope.Unfreeze();
+            MultiplayerDepartBridge.NotifyReconnectEnded();
+            EndHostSession("与房主的连接已断开");
+            Fail("与房主的连接已断开");
         }
 
         /// <summary>

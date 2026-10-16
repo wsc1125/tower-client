@@ -164,6 +164,10 @@ public sealed class TowerRunManager : MonoBehaviour
         // 静态桥事件，OnEnable 订阅 / OnDisable 退订，与场景生命周期对齐。
         Tower.Netcode.MultiplayerDepartBridge.HostSessionEnded += HandleHostSessionEnded;
 
+        // 成员端掉线重连：宽限期内显示「正在重连…」，结束（成功或解散）时隐藏。
+        Tower.Netcode.MultiplayerDepartBridge.ReconnectStarted += HandleReconnectStarted;
+        Tower.Netcode.MultiplayerDepartBridge.ReconnectEnded += HandleReconnectEnded;
+
         // BattleSessionState 是场景内 NetworkObject，OnNetworkSpawn 晚于本组件 OnEnable，
         // 此刻 Instance 可能为 null。用协程重试，直到订阅成功。
         StartCoroutine(SubscribeRunFinishedWhenReady());
@@ -182,6 +186,8 @@ public sealed class TowerRunManager : MonoBehaviour
         UnsubscribeRunFinished();
         UnsubscribeDisconnectCallback();
         Tower.Netcode.MultiplayerDepartBridge.HostSessionEnded -= HandleHostSessionEnded;
+        Tower.Netcode.MultiplayerDepartBridge.ReconnectStarted -= HandleReconnectStarted;
+        Tower.Netcode.MultiplayerDepartBridge.ReconnectEnded -= HandleReconnectEnded;
 
         foreach (var sync in subscribedPlayers)
         {
@@ -359,6 +365,28 @@ public sealed class TowerRunManager : MonoBehaviour
             deathPanel.ShowAutoExit("房主已离开", reason + "，即将返回主菜单");
 
         StartCoroutine(ExitAfterTeamWipeDelay());
+    }
+
+    /// <summary>
+    /// 成员端进入重连宽限期：显示「正在重连…」。
+    /// 本地输入已由 MultiplayerCoordinator 冻结，这里只做 UI 提示。
+    /// </summary>
+    private void HandleReconnectStarted()
+    {
+        if (runFinishedHandled)
+            return;
+
+        if (deathPanel == null)
+            deathPanel = FindObjectOfType<DeathPanelController>();
+        if (deathPanel != null)
+            deathPanel.ShowAutoExit("正在重连", "网络不稳定，正在尝试重新连接房主…");
+    }
+
+    /// <summary>重连宽限期结束（成功恢复或由解散路径接管）：隐藏提示。</summary>
+    private void HandleReconnectEnded()
+    {
+        if (deathPanel != null)
+            deathPanel.Hide();
     }
 
     /// <summary>

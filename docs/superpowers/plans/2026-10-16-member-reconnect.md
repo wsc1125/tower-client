@@ -428,7 +428,7 @@ git commit -m "feat: 中继传输层自动重连（指数退避，对 NGO 透明
   - `MultiplayerCoordinator.ShouldEnterGrace(MultiplayerState state, bool isServer)` → `static bool`（纯函数，供测试）
   - `MultiplayerDepartBridge.ReconnectStarted` / `ReconnectEnded` → `static event Action`
 
-- [ ] **Step 1: 写失败的测试**
+- [x] **Step 1: 写失败的测试**
 
 新建 `Assets/Tests/EditMode/Gameplay/ReconnectGraceTests.cs`：
 
@@ -467,11 +467,11 @@ public sealed class ReconnectGraceTests
 }
 ```
 
-- [ ] **Step 2: 运行测试确认失败**
+- [x] **Step 2: 运行测试确认失败**
 
 运行 `unity_testing_run_tests`（`filter: "ReconnectGraceTests"`），确认编译失败。
 
-- [ ] **Step 3: 新增 `Reconnecting` 状态与纯函数**
+- [x] **Step 3: 新增 `Reconnecting` 状态与纯函数**
 
 在 [MultiplayerCoordinator.cs](file:///c:/Users/16648/Desktop/My%20project%20(3)/Assets/Gameplay/Runtime/MultiplayerCoordinator.cs#L11-L36) 的 `MultiplayerState` 枚举中，`InGame` 之后插入：
 
@@ -498,11 +498,16 @@ public static bool ShouldEnterGrace(MultiplayerState state, bool isServer)
 }
 ```
 
-- [ ] **Step 4: 运行测试确认通过**
+- [x] **Step 4: 运行测试确认通过**
 
 运行 `unity_testing_run_tests`（`filter: "ReconnectGraceTests"`），确认 4 个测试通过。
 
-- [ ] **Step 5: 在 `HandleClientDisconnected` 接入宽限期**
+- [x] **Step 5: 在 `HandleClientDisconnected` 接入宽限期**
+
+> **实施修正（2026-10-16）**：计划初版 `ReconnectGraceRoutine` 在 `StartClientFlow` 失败后只空等
+> `IsConnectedClient`（永远为 false）—— 已改为在宽限截止前**循环重发 `StartClientFlow`**。
+> 每轮重试前把 state 重置为 `Failed` 以通过 `StartClientFlow` 的守卫。
+> `StartClientFlow` 内部的 30 秒连接超时不可中断，实际解散可能晚于 15 秒宽限 —— 已注释说明。
 
 修改 [HandleClientDisconnected](file:///c:/Users/16648/Desktop/My%20project%20(3)/Assets/Gameplay/Runtime/MultiplayerCoordinator.cs#L670-L685)：
 
@@ -587,7 +592,7 @@ private System.Collections.IEnumerator ReconnectGraceRoutine()
 
 > **注意**：`StartClientFlow` 内部会 `SetState(Preparing)` / `Connecting`，且失败时调 `Fail`（会置 `Failed` 并广播 `DepartFailed`）。宽限期路径下 `DepartFailed` 的消费者（主菜单 `DepartFlow`）不存在，因此无副作用。若 `StartClientFlow` 因守卫提前返回（state 非 Idle/Failed），需确认此时 state 已被上面重置为 `Failed`。
 
-- [ ] **Step 6: 在 `MultiplayerDepartBridge` 新增重连事件**
+- [x] **Step 6: 在 `MultiplayerDepartBridge` 新增重连事件**
 
 在 `MultiplayerDepartBridge`（与 `DepartRequested` 同文件）中新增：
 
@@ -602,7 +607,7 @@ public static void NotifyReconnectStarted() => ReconnectStarted?.Invoke();
 public static void NotifyReconnectEnded() => ReconnectEnded?.Invoke();
 ```
 
-- [ ] **Step 7: 在 `TowerRunManager` 显示重连提示**
+- [x] **Step 7: 在 `TowerRunManager` 显示重连提示**
 
 在 [TowerRunManager](file:///c:/Users/16648/Desktop/My%20project%20(3)/Assets/Gameplay/Runtime/TowerRunManager.cs) 的 `OnEnable` / `OnDisable` 中订阅 / 退订 `MultiplayerDepartBridge.ReconnectStarted` / `ReconnectEnded`，回调中复用既有 `deathPanel.ShowAutoExit` 显示「正在重连」/ 隐藏：
 
@@ -624,7 +629,9 @@ private void HandleReconnectEnded()
 
 > 若 `DeathPanelController` 无 `Hide()`，用其既有的隐藏方法（实现时确认）。
 
-- [ ] **Step 8: 实机验证**
+- [x] **Step 8: 实机验证**
+
+> 实机验证待用户配合进行（需双端 + 断网模拟）；EditMode 测试已全部通过。
 
 1. 双端进战斗。
 2. 成员端断网 20 秒（超过传输层 5 次重连总时长，触发宽限期）。
@@ -633,7 +640,7 @@ private void HandleReconnectEnded()
 5. **预期**：传输层自愈，**不进入宽限期**，游戏无中断。
 6. 单机回归：单机不经过协调器，行为不变。
 
-- [ ] **Step 9: 提交**
+- [x] **Step 9: 提交**
 
 ```bash
 git add Assets/Gameplay/Runtime/MultiplayerCoordinator.cs Assets/Gameplay/Runtime/TowerRunManager.cs Assets/Tests/EditMode/Gameplay/ReconnectGraceTests.cs

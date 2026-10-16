@@ -42,6 +42,16 @@ namespace Tower.Netcode
         /// </summary>
         public static event Action<string> HostSessionEnded;
 
+        /// <summary>
+        /// 成员端进入重连宽限期。战斗场景据此显示「正在重连…」并冻结本地输入提示。
+        /// </summary>
+        public static event Action ReconnectStarted;
+
+        /// <summary>
+        /// 重连宽限期结束（成功或解散）。战斗场景据此隐藏「正在重连…」提示。
+        /// </summary>
+        public static event Action ReconnectEnded;
+
         /// <summary>触发出发请求。UI 层调用。</summary>
         public static void RequestDepart(bool isHost)
         {
@@ -58,6 +68,18 @@ namespace Tower.Netcode
         public static void NotifyHostSessionEnded(string reason)
         {
             HostSessionEnded?.Invoke(reason);
+        }
+
+        /// <summary>通知进入重连宽限期。Gameplay 侧调用，战斗场景内消费。</summary>
+        public static void NotifyReconnectStarted()
+        {
+            ReconnectStarted?.Invoke();
+        }
+
+        /// <summary>通知重连宽限期结束（成功或解散）。Gameplay 侧调用。</summary>
+        public static void NotifyReconnectEnded()
+        {
+            ReconnectEnded?.Invoke();
         }
     }
 }
