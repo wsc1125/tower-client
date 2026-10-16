@@ -47,3 +47,6 @@ desktop.ini
 
 # ---- 联机联调临时验证文件（不入库） ----
 /login_avatar_check.png
+/probe.txt
+/client.log
+/host.log
