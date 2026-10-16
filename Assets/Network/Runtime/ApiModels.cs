@@ -215,10 +215,10 @@ namespace Tower.Network
     public sealed class AssetSnapshotEnvelopeDto
     {
         /// <summary>仓库 + 装备槽。直接复用客户端存档结构，零转换。</summary>
-        public PlayerSaveData save;
+        public PlayerSaveData save = new PlayerSaveData();
 
         /// <summary>收藏进度。</summary>
-        public CollectionSaveData collection;
+        public CollectionSaveData collection = new CollectionSaveData();
 
         /// <summary>星空币余额。</summary>
         public int currency;
