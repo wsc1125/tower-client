@@ -3,7 +3,6 @@
 /[Tt]emp/
 /[Oo]bj/
 /[Bb]uild/
-/[Bb]uilds/
 /[Ll]ogs/
 /[Uu]serSettings/
 /[Mm]emoryCaptures/
@@ -35,10 +34,13 @@ sysinfo.txt
 *.stackdump
 
 # ---- 构建产物 ----
-*.apk
+# APK 由 Git LFS 跟踪（见 .gitattributes），其余产物不入库
 *.aab
 *.unitypackage
 *.app
+/Builds/*
+!/Builds/android.apk
+!/Builds/*_BurstDebugInformation_DoNotShip/
 
 # ---- 系统垃圾 ----
 .DS_Store
