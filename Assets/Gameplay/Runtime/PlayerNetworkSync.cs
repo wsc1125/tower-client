@@ -254,12 +254,9 @@ namespace Tower.Netcode
 
                 // 动态生成的玩家来自 prefab，其 PlayerMovement2D.joystick 未接线（摇杆在场景 HUDCanvas 内，
                 // 不在 prefab 里）。这里在运行时把场景摇杆绑给本地玩家，否则虚拟摇杆不响应。
-                if (movement != null && movement.Joystick == null)
-                {
-                    var joystick = FindObjectOfType<VirtualJoystickController>();
-                    if (joystick != null)
-                        movement.SetJoystick(joystick);
-                }
+                // 联机时 NGO 在主菜单场景生成玩家，此刻 HUD 尚不存在 —— 绑定由 BindLocalJoystick
+                // 幂等处理，HUD 就绪（HandleHudReady）时会补绑。
+                BindLocalJoystick();
 
                 // 武器接线：prefab 无法序列化场景内引用（攻击按钮 / 切换按钮在场景 HUD 里），
                 // 不补接会导致「房主玩家武器不显示、攻击键无反应、切武器无效」。
@@ -272,6 +269,7 @@ namespace Tower.Netcode
                 if (BattleHudReady.IsReady)
                 {
                     BindHealthHud();
+                    BindLocalJoystick();
                     BindWeaponRuntime();
                     BindLootRuntime();
                 }
@@ -479,8 +477,29 @@ namespace Tower.Netcode
         {
             BattleHudReady.Ready -= HandleHudReady;
             BindHealthHud();
+            BindLocalJoystick();
             BindWeaponRuntime();
             BindLootRuntime();
+        }
+
+        /// <summary>
+        /// 把场景 HUD 里的移动轮盘绑给本机玩家。
+        ///
+        /// 为什么需要：联机玩家对象由 NGO 在**主菜单场景**生成（出发前双方都在主菜单），
+        /// OnNetworkSpawn 时战斗场景的 HUDCanvas 尚不存在，轮盘绑定必然拿不到 null 且
+        /// OnNetworkSpawn 不会重跑 —— 表现为「联机下轮盘拖了没反应，键盘正常」。
+        /// 单机玩家是场景实例，joystick 引用已在 Inspector 接好，不受影响。
+        ///
+        /// 幂等：已绑定（或 movement 缺失）直接返回，可安全地在 HUD 就绪路径重复调用。
+        /// </summary>
+        private void BindLocalJoystick()
+        {
+            if (movement == null || movement.Joystick != null)
+                return;
+
+            var joystick = FindObjectOfType<VirtualJoystickController>();
+            if (joystick != null)
+                movement.SetJoystick(joystick);
         }
 
         private void BindLootRuntime()
